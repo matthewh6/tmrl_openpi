@@ -32,11 +32,11 @@ def _decode_bridge(data: dict) -> dict:
             img = einops.rearrange(img, "c h w -> h w c")
         return img
 
-    if "camera_present" in data:
-        camera_present = np.asarray(data["camera_present"])
-    else:
-        camera_present = [1]
-    data["camera_present"] = camera_present
+    #if "camera_present" in data:
+        #camera_present = np.asarray(data["camera_present"])
+        #data["camera_present"] = camera_present
+    #else:
+    #    camera_present = [1]
 
     for k, v in data.items():
         if "image" in k:

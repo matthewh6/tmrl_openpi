@@ -15,6 +15,7 @@ import tyro
 
 import openpi.models.model as _model
 import openpi.models.pi0 as pi0
+import openpi.models.tmpi0 as tmpi0
 import openpi.models.pi0_fast as pi0_fast
 import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
@@ -119,6 +120,31 @@ class ModelTransformFactory(GroupFactory):
                 )
             case _model.ModelType.PI05:
                 assert isinstance(model_config, pi0.Pi0Config)
+                return _transforms.Group(
+                    inputs=[
+                        _transforms.InjectDefaultPrompt(self.default_prompt),
+                        _transforms.ResizeImages(224, 224),
+                        _transforms.TokenizePrompt(
+                            _tokenizer.PaligemmaTokenizer(model_config.max_token_len),
+                            discrete_state_input=model_config.discrete_state_input,
+                        ),
+                        _transforms.PadStatesAndActions(model_config.action_dim),
+                    ],
+                )
+            case _model.ModelType.TMPi0:
+                assert isinstance(model_config, tmpi0.TMPi0Config)
+                return _transforms.Group(
+                    inputs=[
+                        _transforms.InjectDefaultPrompt(self.default_prompt),
+                        _transforms.ResizeImages(224, 224),
+                        _transforms.TokenizePrompt(
+                            _tokenizer.PaligemmaTokenizer(model_config.max_token_len),
+                        ),
+                        _transforms.PadStatesAndActions(model_config.action_dim),
+                    ],
+                )
+            case _model.ModelType.TMPi05:
+                assert isinstance(model_config, tmpi0.TMPi0Config)
                 return _transforms.Group(
                     inputs=[
                         _transforms.InjectDefaultPrompt(self.default_prompt),
@@ -296,7 +322,7 @@ class LeRobotBridgeDataConfig(DataConfigFactory):
             #"observation.images.image_1": "observation.images.image_1",
             #"observation.images.image_2": "observation.images.image_2",
             #"observation.images.image_3": "observation.images.image_3",
-            "camera_present": [1],
+            #"camera_present": [1],
             "actions": "action",
             "prompt": "prompt",
         }
@@ -398,7 +424,7 @@ class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
     name: tyro.conf.Suppress[str]
     # Project name.
-    project_name: str = "openpi"
+    project_name: str = "openpi_finetune"
     # Experiment name. Will be used to name the metadata and checkpoint directories.
     exp_name: str = tyro.MISSING
 
@@ -421,9 +447,9 @@ class TrainConfig:
     data: DataConfigFactory = dataclasses.field(default_factory=FakeDataConfig)
 
     # Base directory for config assets (e.g., norm stats).
-    assets_base_dir: str = "./assets"
+    assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
     # Base directory for checkpoints.
-    checkpoint_base_dir: str = "./checkpoints"
+    checkpoint_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
 
     # Random seed that will be used by random generators during training.
     seed: int = 42
@@ -730,7 +756,7 @@ _CONFIGS = [
             default_prompt="Transfer cube",
             use_delta_joint_actions=False,
         ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
         num_train_steps=20_000,
     ),
     ### BRIDGE LoRA Fine-tuning
@@ -739,18 +765,18 @@ _CONFIGS = [
         name="pi0_lora_bridge_1_cam",
         model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotBridgeDataConfig(
-            repo_id="jesbu1/bridge_v2_lerobot_pathmask",
+            repo_id="jesbu1/bridge_v2_lerobot",
             how_many_cameras=1,
             model_type=ModelType.PI0,
             base_config=DataConfig(local_files_only=True),
         ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
         freeze_filter=pi0.Pi0Config(
             paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
         ).get_freeze_filter(),
         ema_decay=None,
         num_train_steps=50_000,
-        batch_size=256,
+        batch_size=512,
         fsdp_devices=2,
         log_interval=50,
         save_interval=250,
@@ -762,15 +788,56 @@ _CONFIGS = [
         name="pi0_bridge_1_cam",
         model=pi0.Pi0Config(),
         data=LeRobotBridgeDataConfig(
-            repo_id="jesbu1/bridge_v2_lerobot_pathmask",
+            repo_id="jesbu1/bridge_v2_lerobot",
             how_many_cameras=1,
             model_type=ModelType.PI0,
+            base_config=DataConfig(local_files_only=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        ema_decay=None,
+        num_train_steps=50_000,
+        batch_size=512,
+        fsdp_devices=2,
+        log_interval=50,
+        save_interval=250,
+        keep_period=10000,
+    ),
+    # Timestep-Modulated Pi Configs
+    TrainConfig(
+        name="tmpi0_lora_bridge_1_cam",
+        model=tmpi0.TMPi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        data=LeRobotBridgeDataConfig(
+            repo_id="jesbu1/bridge_v2_lerobot",
+            how_many_cameras=1,
+            model_type=ModelType.TMPi0,
+            base_config=DataConfig(local_files_only=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        freeze_filter=tmpi0.TMPi0Config(
+            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+        ).get_freeze_filter(),
+        ema_decay=None,
+        num_train_steps=100_000,
+        batch_size=512,
+        fsdp_devices=2,
+        log_interval=50,
+        save_interval=250,
+        keep_period=10000,
+    ),
+    #
+    TrainConfig(
+        name="tmpi0_bridge_1_cam",
+        model=tmpi0.TMPi0Config(),
+        data=LeRobotBridgeDataConfig(
+            repo_id="jesbu1/bridge_v2_lerobot",
+            how_many_cameras=1,
+            model_type=ModelType.TMPi0,
             base_config=DataConfig(local_files_only=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
         ema_decay=None,
         num_train_steps=50_000,
-        batch_size=256,
+        batch_size=512,
         fsdp_devices=2,
         log_interval=50,
         save_interval=250,
