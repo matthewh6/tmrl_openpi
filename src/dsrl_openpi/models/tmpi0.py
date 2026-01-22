@@ -217,7 +217,6 @@ class TMPi0(Pi0):
             time_prefix = jnp.asarray(time_prefix, dtype=jnp.float32)
 
         # jax.debug.print("time_prefix: {} (shape: {})", time_prefix, time_prefix.shape)
-
         # Prepare noise_prefix before JIT compilation to avoid issues
         # If noise_prefix is None, generate it from rng, generate a new rng key inside function if not passed
         if noise_prefix is None:

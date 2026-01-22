@@ -15,16 +15,16 @@ import optax
 import tqdm_loggable.auto as tqdm
 import wandb
 
-import openpi.models.model as _model
-import openpi.shared.array_typing as at
-import openpi.shared.nnx_utils as nnx_utils
-import openpi.training.checkpoints as _checkpoints
-import openpi.training.config as _config
-import openpi.training.data_loader as _data_loader
-import openpi.training.optimizer as _optimizer
-import openpi.training.sharding as sharding
-import openpi.training.utils as training_utils
-import openpi.training.weight_loaders as _weight_loaders
+import dsrl_openpi.models.model as _model
+import dsrl_openpi.shared.array_typing as at
+import dsrl_openpi.shared.nnx_utils as nnx_utils
+import dsrl_openpi.training.checkpoints as _checkpoints
+import dsrl_openpi.training.config as _config
+import dsrl_openpi.training.data_loader as _data_loader
+import dsrl_openpi.training.optimizer as _optimizer
+import dsrl_openpi.training.sharding as sharding
+import dsrl_openpi.training.utils as training_utils
+import dsrl_openpi.training.weight_loaders as _weight_loaders
 
 
 def init_logging():
