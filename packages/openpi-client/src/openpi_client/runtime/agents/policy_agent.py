@@ -16,7 +16,7 @@ class PolicyAgent(_agent.Agent):
 
     def reset(self) -> None:
         self._policy.reset()
-        
+
     @override
     def get_prefix_rep(self, observation: dict) -> dict:
         return self._policy.get_prefix_rep(observation)
