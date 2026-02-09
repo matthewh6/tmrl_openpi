@@ -165,11 +165,11 @@ class TMPi0(Pi0):
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
 
-        # one big forward pass of prefix + suffix at once
+        # forward pass of prefix
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
 
         # noise the prefix using a DDIM-style marginal controlled by time_prefix
-        time_prefix = jax.random.uniform(time_prefix_rng, batch_shape) * 0.6
+        time_prefix = jax.random.uniform(time_prefix_rng, batch_shape)
         noise_prefix = jax.random.normal(noise_prefix_rng, prefix_tokens.shape)
         t_idx = jnp.clip((time_prefix * (self.T - 1)).astype(jnp.int32), 0, self.T - 1)
         ab_t = jnp.asarray(self.alpha_bars, dtype=jnp.float32)[t_idx]
@@ -180,6 +180,7 @@ class TMPi0(Pi0):
         sqrt_bb = sqrt_bb.astype(prefix_tokens.dtype)
         noisy_prefix_tokens = sqrt_ab * prefix_tokens + sqrt_bb * noise_prefix
 
+        # forward pass of suffix
         suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
             observation, x_t, time, time_prefix
         )
