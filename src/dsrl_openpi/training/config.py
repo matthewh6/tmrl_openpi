@@ -24,9 +24,11 @@ import dsrl_openpi.policies.libero_policy as libero_policy
 import dsrl_openpi.policies.bridge_policy as bridge_policy
 import dsrl_openpi.shared.download as _download
 import dsrl_openpi.shared.normalize as _normalize
+import dsrl_openpi.training.droid_rlds_dataset as droid_rlds_dataset
 import dsrl_openpi.training.optimizer as _optimizer
 import dsrl_openpi.training.weight_loaders as weight_loaders
 import dsrl_openpi.transforms as _transforms
+
 
 ModelType: TypeAlias = _model.ModelType
 # Work around a tyro issue with using nnx.filterlib.Filter directly.
@@ -91,6 +93,13 @@ class DataConfig:
 
     # If true, will disable syncing the dataset from the Hugging Face Hub. Allows training on local-only datasets.
     local_files_only: bool = False
+
+    # Only used for RLDS data loader (ie currently only used for DROID).
+    rlds_data_dir: str | None = None
+    # Action space for DROID dataset.
+    action_space: droid_rlds_dataset.DroidActionSpace | None = None
+    # Path to the data filter file for DROID dataset
+    filter_dict_path: str | None = None
 
 
 class GroupFactory(Protocol):
@@ -196,7 +205,7 @@ class DataConfigFactory(abc.ABC):
             repo_id=repo_id,
             asset_id=asset_id,
             norm_stats=self._load_norm_stats(epath.Path(self.assets.assets_dir or assets_dirs), asset_id),
-            use_quantile_norm=model_config.model_type != ModelType.PI0,
+            use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.TMPi0,
         )
 
     def _load_norm_stats(self, assets_dir: epath.Path, asset_id: str | None) -> dict[str, _transforms.NormStats] | None:
@@ -231,11 +240,71 @@ class SimpleDataConfig(DataConfigFactory):
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         return dataclasses.replace(
-            self.create_base_config(assets_dirs),
+            self.create_base_config(assets_dirs, model_config),
             data_transforms=self.data_transforms(model_config),
             model_transforms=self.model_transforms(model_config),
-            use_quantile_norm=model_config.model_type != ModelType.PI0,
+            use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.TMPi0,
         )
+
+@dataclasses.dataclass(frozen=True)
+class RLDSDroidDataConfig(DataConfigFactory):
+    """
+    Config for training on DROID, using RLDS data format (for efficient training on larger datasets).
+    """
+
+    rlds_data_dir: str | None = None
+    action_space: droid_rlds_dataset.DroidActionSpace | None = None
+
+    # Filtering options. Can pass a path to a dictionary that maps episodes to timestep ranges
+    # to tuples denoting ranges of time steps to keep (start, end). Episodes are uniquely identified with
+    # f"{recording_folderpath}--{file_path}", both of which are present in the RLDS episode metadata.
+    # Path to the filter dictionary file.
+    filter_dict_path: str | None = "gs://openpi-assets/droid/droid_sample_ranges_v1_0_1.json"
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/exterior_image_1_left": "observation/image",
+                        "observation/wrist_image_left": "observation/wrist_image",
+                        "observation/joint_position": "observation/joint_position",
+                        "observation/gripper_position": "observation/gripper_position",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[droid_policy.DroidInputs(model_type=model_config.model_type)],
+            outputs=[droid_policy.DroidOutputs()],
+        )
+
+        if self.action_space == droid_rlds_dataset.DroidActionSpace.JOINT_POSITION:
+            # Data loader returns absolute joint position actions -- convert to delta actions for training.
+            delta_action_mask = _transforms.make_bool_mask(7, -1)
+            data_transforms = data_transforms.push(
+                inputs=[_transforms.DeltaActions(delta_action_mask)],
+                outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+            )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        assert self.rlds_data_dir is not None, "Need to set rlds data dir for RLDS data loader."
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+            rlds_data_dir=self.rlds_data_dir,
+            action_space=self.action_space,
+            filter_dict_path=self.filter_dict_path,
+        )
+
 
 
 @dataclasses.dataclass(frozen=True)
@@ -447,10 +516,12 @@ class TrainConfig:
 
     # Base directory for config assets (e.g., norm stats).
     # assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
-    assets_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
+    # assets_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
+    assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
     # Base directory for checkpoints.
     # checkpoint_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
-    checkpoint_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    # checkpoint_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
 
     # Random seed that will be used by random generators during training.
     seed: int = 42
@@ -536,6 +607,116 @@ _CONFIGS = [
             default_prompt="open the tupperware and put the food on the plate",
         ),
     ),
+    TrainConfig(
+        # This config is for fine-tuning pi05 on the *full* DROID dataset.
+        # We use RLDS data loading to make training on this large dataset tractable.
+        # For fine-tuning on your own DROID dataset, see below.
+        name="pi0_full_droid_finetune",
+        model=pi0.Pi0Config(
+            pi05=False,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid/1.0.1",
+            # Set this to the path to your DROID RLDS dataset (the parent directory of the `droid` directory).
+            # rlds_data_dir="/mnt/pi-data/kevin",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=32,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
+    ),
+    TrainConfig(
+        # This config is for fine-tuning pi05 on the *full* DROID dataset.
+        # We use RLDS data loading to make training on this large dataset tractable.
+        # For fine-tuning on your own DROID dataset, see below.
+        name="tmpi0_full_droid_finetune",
+        # model=pi0_config.Pi0Config(
+        #     pi05=False,
+        #     action_dim=32,
+        #     action_horizon=16,
+        # ),
+        model=tmpi0.TMPi0Config(
+            pi05=False,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid/1.0.1",
+            # Set this to the path to your DROID RLDS dataset (the parent directory of the `droid` directory).
+            # rlds_data_dir="/mnt/pi-data/kevin",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=32,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
+    ),
+    TrainConfig(
+        # This config is for fine-tuning pi05 on the *full* DROID dataset.
+        # We use RLDS data loading to make training on this large dataset tractable.
+        # For fine-tuning on your own DROID dataset, see below.
+        name="pi05_full_droid_finetune",
+        model=pi0.Pi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid",
+            # Set this to the path to your DROID RLDS dataset (the parent directory of the `droid` directory).
+            # rlds_data_dir="/mnt/pi-data/kevin",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=256,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
+    ),
     #
     # Inference DROID configs.
     #
@@ -546,6 +727,23 @@ _CONFIGS = [
             assets=AssetsConfig(asset_id="droid"),
             data_transforms=lambda model: _transforms.Group(
                 inputs=[droid_policy.DroidInputs(model_type=ModelType.PI0)],
+                outputs=[droid_policy.DroidOutputs()],
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+    ),
+    TrainConfig(
+        name="tmpi0_droid",
+        model=tmpi0.TMPi0Config(
+            action_horizon=16,
+            # action_horizon=10,
+        ),
+        data=SimpleDataConfig(
+            assets=AssetsConfig(asset_id="droid"),
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[droid_policy.DroidInputs(model_type=ModelType.TMPi0)],
                 outputs=[droid_policy.DroidOutputs()],
             ),
             base_config=DataConfig(
@@ -932,7 +1130,7 @@ _CONFIGS = [
     #         model_type=ModelType.TMPi05,
     #         base_config=DataConfig(local_files_only=True),
     #     ),
-    #     weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+    #     weight_loader=weight_set-option -g mouse onloaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
     #     freeze_filter=tmpi0.TMPi0Config(
     #         paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
     #     ).get_freeze_filter(),

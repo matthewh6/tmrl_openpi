@@ -94,7 +94,6 @@ class TMPi0(Pi0):
         alphas = 1.0 - betas
         # Store as Python list (not a JAX array) to avoid NNX treating it as state.
         self.alpha_bars = np.cumprod(alphas, axis=0, dtype=np.float32).tolist()
-        self.t_max = 1.0
 
     @at.typecheck
     def embed_suffix(
@@ -216,7 +215,7 @@ class TMPi0(Pi0):
         if time_prefix is None:
             time_prefix = jnp.zeros(batch_size, dtype=jnp.float32)
         else:
-            time_prefix = jnp.broadcast_to(jnp.clip(time_prefix, 0.0, self.t_max), (batch_size,))
+            time_prefix = jnp.broadcast_to(jnp.clip(time_prefix, 0.0, 1.0), (batch_size,))
             time_prefix = jnp.asarray(time_prefix, dtype=jnp.float32)
 
         # jax.debug.print("time_prefix: {} (shape: {})", time_prefix, time_prefix.shape)
@@ -231,19 +230,24 @@ class TMPi0(Pi0):
         else:
             noise_prefix = noise_prefix
 
-        t_idx = jnp.clip((time_prefix * (self.T - 1)).astype(jnp.int32), 0, self.T - 1)
-        # jax.debug.print("t_idx: {} (shape: {} dtype: {})", t_idx, t_idx.shape, t_idx.dtype)
-        ab_t = jnp.asarray(self.alpha_bars, dtype=jnp.float32)[t_idx]
-        # jax.debug.print("ab_t: {} (shape: {} dtype: {})", ab_t, ab_t.shape, ab_t.dtype)
-        sqrt_ab = jnp.sqrt(ab_t)[..., None, None]
-        sqrt_bb = jnp.sqrt(1.0 - ab_t)[..., None, None]
-        noise_prefix = noise_prefix.astype(prefix_tokens.dtype)
-        # jax.debug.print("prefix_tokens: {} (shape: {})", prefix_tokens, prefix_tokens.shape)
-        sqrt_ab = sqrt_ab.astype(prefix_tokens.dtype)
-        sqrt_bb = sqrt_bb.astype(prefix_tokens.dtype)
-        # jax.debug.print("sqrt_ab: {} (shape: {} dtype: {})", sqrt_ab, sqrt_ab.shape, sqrt_ab.dtype)
-        # jax.debug.print("sqrt_bb: {} (shape: {} dtype: {})", sqrt_bb, sqrt_bb.shape, sqrt_bb.dtype)
-        noisy_prefix_tokens = sqrt_ab * prefix_tokens + sqrt_bb * noise_prefix
+        if time_prefix is None:
+            noisy_prefix_tokens = prefix_tokens
+
+        else:
+
+            t_idx = jnp.clip((time_prefix * (self.T - 1)).astype(jnp.int32), 0, self.T - 1)
+            # jax.debug.print("t_idx: {} (shape: {} dtype: {})", t_idx, t_idx.shape, t_idx.dtype)
+            ab_t = jnp.asarray(self.alpha_bars, dtype=jnp.float32)[t_idx]
+            # jax.debug.print("ab_t: {} (shape: {} dtype: {})", ab_t, ab_t.shape, ab_t.dtype)
+            sqrt_ab = jnp.sqrt(ab_t)[..., None, None]
+            sqrt_bb = jnp.sqrt(1.0 - ab_t)[..., None, None]
+            noise_prefix = noise_prefix.astype(prefix_tokens.dtype)
+            # jax.debug.print("prefix_tokens: {} (shape: {})", prefix_tokens, prefix_tokens.shape)
+            sqrt_ab = sqrt_ab.astype(prefix_tokens.dtype)
+            sqrt_bb = sqrt_bb.astype(prefix_tokens.dtype)
+            # jax.debug.print("sqrt_ab: {} (shape: {} dtype: {})", sqrt_ab, sqrt_ab.shape, sqrt_ab.dtype)
+            # jax.debug.print("sqrt_bb: {} (shape: {} dtype: {})", sqrt_bb, sqrt_bb.shape, sqrt_bb.dtype)
+            noisy_prefix_tokens = sqrt_ab * prefix_tokens + sqrt_bb * noise_prefix
 
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
