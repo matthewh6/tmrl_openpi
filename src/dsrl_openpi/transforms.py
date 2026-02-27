@@ -266,11 +266,9 @@ class TokenizePrompt(DataTransformFn):
             state = None
 
         if not isinstance(prompt, str):
-            # Handle vectorized/tuple/array prompts
-            if isinstance(prompt, (list, tuple)):
-                prompt = " ".join(map(str, prompt))
+            if hasattr(prompt, '__len__') and len(prompt) >= 1:
+                prompt = str(prompt[0])
             else:
-                # numpy / torch scalar
                 prompt = str(getattr(prompt, "item", lambda: prompt)())
 
         tokens, token_masks = self.tokenizer.tokenize(prompt, state)

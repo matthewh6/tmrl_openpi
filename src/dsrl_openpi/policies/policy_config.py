@@ -1,8 +1,10 @@
 from collections.abc import Sequence
 import dataclasses
 import logging
+import os
 import pathlib
 from typing import Any
+
 
 import jax.numpy as jnp
 
@@ -52,22 +54,36 @@ def create_trained_policy(
     repack_transforms = repack_transforms or transforms.Group()
     checkpoint_dir = download.maybe_download(str(checkpoint_dir))
 
+    # Check if this is a PyTorch model by looking for model.safetensors
+    weight_path = os.path.join(checkpoint_dir, "model.safetensors")
+    is_pytorch = os.path.exists(weight_path)
+
     logging.info("Loading model...")
-    # Avoid bfloat16 params on machines without proper support; load as fp32.
-    model = train_config.model.load(_model.restore_params(checkpoint_dir / "params", dtype=jnp.float32))
+
+    if is_pytorch:
+        model = train_config.model.load_pytorch(train_config, weight_path)
+        model.paligemma_with_expert.to_bfloat16_for_selected_params("bfloat16")
+    else:
+        # Avoid bfloat16 params on machines without proper support; load as fp32.
+        model = train_config.model.load(_model.restore_params(checkpoint_dir / "params", dtype=jnp.float32))
+    
     data_config = train_config.data.create(train_config.assets_dirs, train_config.model)
     if norm_stats is None:
         # We are loading the norm stats from the checkpoint instead of the config assets dir to make sure
         # that the policy is using the same normalization stats as the original training process.
         if data_config.asset_id is None:
             raise ValueError("Asset id is required to load norm stats.")
-
-        # asset_id = data_config.asset_id.replace('jesbu1', 'hongmm2')
-        # asset_id = asset_id.replace('bridge_v2_lerobot','uw_widowx_lerobot')
-        
         asset_id = data_config.asset_id
-
         norm_stats = _checkpoints.load_norm_stats(checkpoint_dir / "assets", asset_id)
+
+    # Determine the device to use for PyTorch models
+    if is_pytorch:
+        try:
+            import torch
+
+            pytorch_device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            pytorch_device = "cpu"
 
     return _policy.Policy(
         model,
@@ -86,4 +102,6 @@ def create_trained_policy(
         ],
         sample_kwargs=sample_kwargs,
         metadata=train_config.policy_metadata,
+        is_pytorch=is_pytorch,
+        pytorch_device=pytorch_device if is_pytorch else None,
     )

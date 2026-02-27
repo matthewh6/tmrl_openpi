@@ -4,7 +4,7 @@ import dataclasses
 import enum
 import logging
 import pathlib
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, Union
 
 import augmax
 from flax import nnx
@@ -14,11 +14,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import orbax.checkpoint as ocp
+import safetensors.torch
+import torch
 
+from dsrl_openpi.models_pytorch import pi0_pytorch
+from dsrl_openpi.models_pytorch import tmpi0_pytorch
 from dsrl_openpi.shared import image_tools
 import dsrl_openpi.shared.array_typing as at
 
-logger = logging.getLogger("openpi")
+logger = logging.getLogger("dsrl_openpi")
 
 ArrayT = TypeVar("ArrayT", at.Array, jax.ShapeDtypeStruct)
 
@@ -85,20 +89,29 @@ class Observation(Generic[ArrayT]):
     that should be produced by the data transforms.
     """
 
-    # Images, in [-1, 1] float32.
-    images: dict[str, at.Float[ArrayT, "*b h w c"]]
-    # Image masks, with same keys as images.
-    image_masks: dict[str, at.Bool[ArrayT, "*b"]]
-    # Low-dimensional robot state.
-    state: at.Float[ArrayT, "*b s"]
+    # # Images, in [-1, 1] float32.
+    # images: dict[str, at.Float[ArrayT, "*b h w c"]]
+    # # Image masks, with same keys as images.
+    # image_masks: dict[str, at.Bool[ArrayT, "*b"]]
+    # # Low-dimensional robot state.
+    # state: at.Float[ArrayT, "*b s"]
 
-    # Tokenized prompt.
-    tokenized_prompt: at.Int[ArrayT, "*b l"] | None = None
-    # Tokenized prompt mask.
-    tokenized_prompt_mask: at.Bool[ArrayT, "*b l"] | None = None
+    # # Tokenized prompt.
+    # tokenized_prompt: at.Int[ArrayT, "*b l"] | None = None
+    # # Tokenized prompt mask.
+    # tokenized_prompt_mask: at.Bool[ArrayT, "*b l"] | None = None
+
+    # Images, in [-1, 1] float32.
+    images: dict[str, Union[at.Float[ArrayT, "*b h w c"], at.Float[torch.Tensor, "*b h w c"]]]
+    # Image masks
+    image_masks: dict[str, Union[at.Bool[ArrayT, "*b"], at.Bool[torch.Tensor, "*b"]]]
+    # Low-dimensional robot state
+    state: Union[at.Float[ArrayT, "*b s"], at.Real[torch.Tensor, "*b s"]]
+    # Tokenized prompt
+    tokenized_prompt: Union[at.Int[ArrayT, "*b l"], at.Int[torch.Tensor, "*b l"], None] = None
+    tokenized_prompt_mask: Union[at.Bool[ArrayT, "*b l"], at.Bool[torch.Tensor, "*b l"], None] = None
 
     # pi0-fast model specific fields.
-
     # Token auto-regressive mask (for FAST autoregressive model).
     token_ar_mask: at.Int[ArrayT, "*b l"] | None = None
     # Token loss mask (for FAST autoregressive model).
@@ -114,6 +127,8 @@ class Observation(Generic[ArrayT]):
         for key in data["image"]:
             if data["image"][key].dtype == np.uint8:
                 data["image"][key] = data["image"][key].astype(np.float32) / 255.0 * 2.0 - 1.0
+            elif data["image"][key].dtype == torch.uint8:
+                data["image"][key] = data["image"][key].to(torch.float32) / 255.0 * 2.0 - 1.0
         return cls(
             images=data["image"],
             image_masks=data["image_mask"],
@@ -235,6 +250,17 @@ class BaseModelConfig(abc.ABC):
         at.check_pytree_equality(expected=state.to_pure_dict(), got=params, check_shapes=True, check_dtypes=False)
         state.replace_by_pure_dict(params)
         return nnx.merge(graphdef, state)
+
+    def load_pytorch(self, train_config, weight_path: str):
+        logger.info(f"train_config: {train_config}")
+        if "tmpi0" in weight_path:
+            logger.info("Loading TMPI0Pytorch")
+            model = tmpi0_pytorch.TMPI0Pytorch(config=train_config.model)
+        else:
+            logger.info("Loading PI0Pytorch")
+            model = pi0_pytorch.PI0Pytorch(config=train_config.model)
+        safetensors.torch.load_model(model, weight_path)
+        return model
 
     @abc.abstractmethod
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[Observation, Actions]:

@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+from typing import Any
 
 import einops
 import flax.nnx as nnx
@@ -82,6 +83,8 @@ class Pi0Config(_model.BaseModelConfig):
     pi05: bool = False
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
+    # Language dropout: during training, drop language tokens with this probability (classifier-free style).
+    language_dropout_rate: float = 0.0
 
     def __post_init__(self):
         if self.max_token_len is None:
@@ -190,10 +193,18 @@ class Pi0(_model.BaseModel):
             self.action_time_mlp_in = nnx.Linear(2 * action_expert_config.width, action_expert_config.width, rngs=rngs)
             self.action_time_mlp_out = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
         self.action_out_proj = nnx.Linear(action_expert_config.width, config.action_dim, rngs=rngs)
+        self.language_dropout_rate = config.language_dropout_rate
+        if self.language_dropout_rate > 0.0:
+            logger.info("Using language dropout with rate %s in Pi0 model", self.language_dropout_rate)
 
     @at.typecheck
     def embed_prefix(
-        self, obs: _model.Observation
+        self,
+        obs: _model.Observation,
+        *,
+        train: bool = False,
+        force_dropout: Any = False,
+        dropout_rng: at.KeyArrayLike | None = None,
     ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
         input_mask = []
         ar_mask = []
@@ -216,8 +227,24 @@ class Pi0(_model.BaseModel):
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
             tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
+            batch_size = tokenized_inputs.shape[0]
+            if train and self.language_dropout_rate > 0.0 and dropout_rng is not None:
+                keep_mask = jax.random.bernoulli(
+                    dropout_rng,
+                    p=1.0 - self.language_dropout_rate,
+                    shape=(batch_size, 1),
+                )
+            else:
+                keep_mask = jnp.ones((batch_size, 1), dtype=jnp.bool_)
+            keep_mask = jnp.logical_and(keep_mask, jnp.logical_not(force_dropout))
+            # jax.debug.print(
+            #     "Force Dropout Active: {fd} | Mean Keep Rate: {km}", 
+            #     fd=force_dropout, 
+            #     km=jnp.mean(keep_mask.astype(jnp.float32))
+            # )
+            current_prompt_mask = jnp.logical_and(obs.tokenized_prompt_mask, keep_mask)
             tokens.append(tokenized_inputs)
-            input_mask.append(obs.tokenized_prompt_mask)
+            input_mask.append(current_prompt_mask)
             # full attention between image and language inputs
             ar_mask += [False] * tokenized_inputs.shape[1]
         tokens = jnp.concatenate(tokens, axis=1)
@@ -278,7 +305,7 @@ class Pi0(_model.BaseModel):
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
     ) -> at.Float[at.Array, "*b ah"]:
-        preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
+        preprocess_rng, noise_rng, time_rng, dropout_rng = jax.random.split(rng, 4)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
         batch_shape = actions.shape[:-2]
@@ -289,7 +316,9 @@ class Pi0(_model.BaseModel):
         u_t = noise - actions
 
         # one big forward pass of prefix + suffix at once
-        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(
+            observation, train=train, dropout_rng=dropout_rng if train else None
+        )
         suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
         ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
@@ -308,8 +337,11 @@ class Pi0(_model.BaseModel):
         observation: _model.Observation,
         *,
         noise: jnp.ndarray,
+        time_prefix: jnp.ndarray | None = None,
+        noise_prefix: jnp.ndarray | None = None,
         rng: at.KeyArrayLike | None = None,
         num_steps: int | at.Int[at.Array, ""] = 10,
+        force_dropout: Any = False,
     ) -> _model.Actions:
         observation = _model.preprocess_observation(None, observation, train=False)
         # note that we use the convention more common in diffusion literature, where t=1 is noise and t=0 is the target
@@ -317,7 +349,9 @@ class Pi0(_model.BaseModel):
         dt = -1.0 / num_steps
         batch_size = observation.state.shape[0]
         # first fill KV cache with a forward pass of the prefix
-        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(
+            observation, train=False, force_dropout=force_dropout
+        )
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
         _, kv_cache = self.PaliGemma.llm([prefix_tokens, None], mask=prefix_attn_mask, positions=positions)

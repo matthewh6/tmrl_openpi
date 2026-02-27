@@ -13,7 +13,8 @@ from dsrl_openpi.models import model as _model
 import dsrl_openpi.models.siglip as _siglip
 from dsrl_openpi.shared import array_typing as at
 import dsrl_openpi.shared.nnx_utils as nnx_utils
-from dsrl_openpi.models.pi0 import Pi0, Pi0Config, make_attn_mask
+from dsrl_openpi.models.pi0 import Pi0, make_attn_mask
+from dsrl_openpi.models.pi0_config import Pi0Config
 
 logger = logging.getLogger("openpi")
 
@@ -203,6 +204,7 @@ class TMPi0(Pi0):
         noise_prefix: jnp.ndarray | None = None,
         time_prefix: jnp.ndarray | None = None,
         rng: at.KeyArrayLike | None = None,
+        force_dropout: bool = False,
         num_steps: int | at.Int[at.Array, ""] = 10,
     ) -> _model.Actions:
         observation = _model.preprocess_observation(None, observation, train=False)
