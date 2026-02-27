@@ -6,7 +6,6 @@ import torch.nn.functional as F  # noqa: N812
 
 from dsrl_openpi.models_pytorch.pi0_pytorch import PI0Pytorch, make_att_2d_masks, get_safe_dtype, sample_beta
 
-
 def create_dual_sinusoidal_pos_embedding(
     time: torch.tensor, time_prefix: torch.tensor, dimension: int, min_period: float, max_period: float, device="cpu"
 ) -> Tensor:
@@ -25,18 +24,12 @@ def create_dual_sinusoidal_pos_embedding(
     scaling_factor = 1.0 / period * 2 * math.pi
     sin_input = scaling_factor[None, :] * time[:, None]
     sin_input_prefix = scaling_factor[None, :] * time_prefix[:, None]
-    return torch.cat(
-        [torch.sin(sin_input), torch.cos(sin_input), torch.sin(sin_input_prefix), torch.cos(sin_input_prefix)], dim=1
-    )
+    return torch.cat([torch.sin(sin_input), torch.cos(sin_input), torch.sin(sin_input_prefix), torch.cos(sin_input_prefix)], dim=1)
 
 
 class TMPI0Pytorch(PI0Pytorch):
     def __init__(self, config):
         super().__init__(config)
-
-        # DDIM-style / diffusion marginal mixing
-        # Map continuous time in [0,1] to an alpha_bar in (0,1].
-        # Here we construct a simple beta schedule and get cumulative alpha_bar(t).
         self.T = 1000
         betas = torch.linspace(1e-4, 0.02, self.T, device=self.device)  # or your schedule
         alphas = 1.0 - betas
@@ -72,20 +65,9 @@ class TMPI0Pytorch(PI0Pytorch):
             # Set attention masks so that image and language inputs do not attend to state or actions
             att_masks += [1]
 
-        # # Embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1]
-        # time_emb = create_sinusoidal_pos_embedding(
-        #     timestep, self.action_in_proj.out_features, min_period=4e-3, max_period=4.0, device=timestep.device
-        # )
-        # time_emb = time_emb.type(dtype=timestep.dtype)
-
         # Embed the two timesteps together
         time_emb = create_dual_sinusoidal_pos_embedding(
-            timestep,
-            timestep_prefix,
-            self.action_in_proj.out_features,
-            min_period=4e-3,
-            max_period=4.0,
-            device=timestep.device,
+            timestep, timestep_prefix, self.action_in_proj.out_features, min_period=4e-3, max_period=4.0, device=timestep.device
         )
         time_emb = time_emb.type(dtype=timestep.dtype)
 
@@ -142,20 +124,19 @@ class TMPI0Pytorch(PI0Pytorch):
 
         # First handle the prefix (VLM Embeddings)
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, lang_tokens, lang_masks)
+        
         if noise_prefix is None:
             noise_prefix = self.sample_noise(prefix_embs.shape, prefix_embs.device)
 
         if time_prefix is None:
             time_prefix = self.sample_unif(actions.shape[0], actions.device)
 
-        # IMPORTANT: BOUNDING PREFIFX TIMESTEP TO 0.6
-        time_prefix = time_prefix * 0.6
-
         # convert continuous time in [0,1] to discrete index in [0, T-1]
+        # if you prefer fractional timesteps you can linearly interpolate alpha_bars between indices.
         t_idx = (time_prefix * (self.T - 1)).long().clamp(0, self.T - 1)  # (B,)
         ab_t = self.alpha_bars[t_idx]  # (B,)
-        sqrt_ab = torch.sqrt(ab_t)  # (B,)
-        sqrt_bb = torch.sqrt(1.0 - ab_t)  # (B,)
+        sqrt_ab = torch.sqrt(ab_t)                        # (B,)
+        sqrt_bb = torch.sqrt(1.0 - ab_t)        # (B,)
 
         # expand to (B, 1, 1) to mix with (B, L, D)
         sqrt_ab = sqrt_ab[:, None, None]
@@ -175,7 +156,7 @@ class TMPI0Pytorch(PI0Pytorch):
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
-
+        
         suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(state, x_t, time, time_prefix)
 
         if (
@@ -184,7 +165,6 @@ class TMPI0Pytorch(PI0Pytorch):
         ):
             suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
             noisy_prefix_embs = noisy_prefix_embs.to(dtype=torch.bfloat16)
-            # prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
 
         pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
         att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
@@ -207,9 +187,6 @@ class TMPI0Pytorch(PI0Pytorch):
             )
             return suffix_out
 
-        # suffix_out = self._apply_checkpoint(
-        #     forward_func, prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond
-        # )
         suffix_out = self._apply_checkpoint(
             forward_func, noisy_prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond
         )
@@ -226,9 +203,7 @@ class TMPI0Pytorch(PI0Pytorch):
         return F.mse_loss(u_t, v_t, reduction="none")
 
     @torch.no_grad()
-    def sample_actions(
-        self, device, observation, noise=None, noise_prefix=None, time_prefix=None, num_steps=10
-    ) -> Tensor:
+    def sample_actions(self, device, observation, noise=None, noise_prefix=None, time_prefix=None, num_steps=10) -> Tensor:
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = observation.state.shape[0]
         if noise is None:
@@ -243,31 +218,23 @@ class TMPI0Pytorch(PI0Pytorch):
 
         if noise_prefix is None:
             noise_prefix = self.sample_noise(prefix_embs.shape, prefix_embs.device)
+
         if time_prefix is None:
-            # Fully clean
             time_prefix = torch.tensor(0.0, dtype=torch.float32, device=device)
             noisy_prefix_embs = prefix_embs
         else:
-            time_prefix_expanded = time_prefix[:, None, None]
-
-            # Old Flow matching interpolation style
-            # noisy_prefix_embs = time_prefix_expanded * noise_prefix + (1 - time_prefix_expanded) * prefix_embs
-
-            # convert continuous time in [0,1] to discrete index in [0, T-1]
-            # if you prefer fractional timesteps you can linearly interpolate alpha_bars between indices.
+            # continuous time in [0,1] -> discrete index in [0, T-1]
             t_idx = (time_prefix * (self.T - 1)).long().clamp(0, self.T - 1)  # (B,)
 
             # gather alpha_bar per batch
-            # alpha_bars[t_idx] has shape (B,)
             ab_t = self.alpha_bars[t_idx]  # (B,)
-            sqrt_ab = torch.sqrt(ab_t)  # (B,)
-            sqrt_bb = torch.sqrt(1.0 - ab_t)  # (B,)
+            sqrt_ab = torch.sqrt(ab_t)                        # (B,)
+            sqrt_bb = torch.sqrt(1.0 - ab_t)        # (B,)
 
             # expand to (B, 1, 1) to mix with (B, L, D)
             sqrt_ab = sqrt_ab[:, None, None]
             sqrt_bb = sqrt_bb[:, None, None]
 
-            # DDIM forward-marginal style noisy conditioning:
             # x_t = sqrt(alpha_bar_t) * x0 + sqrt(1 - alpha_bar_t) * eps
             noisy_prefix_embs = sqrt_ab * prefix_embs + sqrt_bb * noise_prefix
 
@@ -315,9 +282,7 @@ class TMPI0Pytorch(PI0Pytorch):
         timestep_prefix,
     ):
         """Apply one denoising step of the noise `x_t` at a given timestep."""
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(
-            state, x_t, timestep, timestep_prefix
-        )
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(state, x_t, timestep, timestep_prefix)
 
         suffix_len = suffix_pad_masks.shape[1]
         batch_size = prefix_pad_masks.shape[0]
