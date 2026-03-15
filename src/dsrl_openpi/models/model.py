@@ -253,7 +253,8 @@ class BaseModelConfig(abc.ABC):
 
     def load_pytorch(self, train_config, weight_path: str):
         logger.info(f"train_config: {train_config}")
-        if "tmpi0" in weight_path:
+        from dsrl_openpi.models.tmpi0 import TMPi0Config
+        if isinstance(train_config.model, TMPi0Config):
             logger.info("Loading TMPI0Pytorch")
             model = tmpi0_pytorch.TMPI0Pytorch(config=train_config.model)
         else:
