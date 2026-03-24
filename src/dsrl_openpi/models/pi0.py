@@ -84,7 +84,6 @@ class Pi0Config(_model.BaseModelConfig):
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
     # Language dropout: during training, drop language tokens with this probability (classifier-free style).
-    language_dropout_rate: float = 0.0
 
     def __post_init__(self):
         if self.max_token_len is None:
@@ -193,9 +192,6 @@ class Pi0(_model.BaseModel):
             self.action_time_mlp_in = nnx.Linear(2 * action_expert_config.width, action_expert_config.width, rngs=rngs)
             self.action_time_mlp_out = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
         self.action_out_proj = nnx.Linear(action_expert_config.width, config.action_dim, rngs=rngs)
-        self.language_dropout_rate = config.language_dropout_rate
-        if self.language_dropout_rate > 0.0:
-            logger.info("Using language dropout with rate %s in Pi0 model", self.language_dropout_rate)
 
     @at.typecheck
     def embed_prefix(
@@ -228,14 +224,7 @@ class Pi0(_model.BaseModel):
         if obs.tokenized_prompt is not None:
             tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
             batch_size = tokenized_inputs.shape[0]
-            if train and self.language_dropout_rate > 0.0 and dropout_rng is not None:
-                keep_mask = jax.random.bernoulli(
-                    dropout_rng,
-                    p=1.0 - self.language_dropout_rate,
-                    shape=(batch_size, 1),
-                )
-            else:
-                keep_mask = jnp.ones((batch_size, 1), dtype=jnp.bool_)
+            keep_mask = jnp.ones((batch_size, 1), dtype=jnp.bool_)
             keep_mask = jnp.logical_and(keep_mask, jnp.logical_not(force_dropout))
             # jax.debug.print(
             #     "Force Dropout Active: {fd} | Mean Keep Rate: {km}", 

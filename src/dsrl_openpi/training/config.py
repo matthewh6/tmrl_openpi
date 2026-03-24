@@ -516,12 +516,12 @@ class TrainConfig:
 
     # Base directory for config assets (e.g., norm stats).
     # assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
-    # assets_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
-    assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
+    assets_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
+    # assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
     # Base directory for checkpoints.
     # checkpoint_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
-    # checkpoint_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
-    checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    checkpoint_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    # checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
 
     # Random seed that will be used by random generators during training.
     seed: int = 42
@@ -866,6 +866,17 @@ _CONFIGS = [
         ).get_freeze_filter(),
         # Turn off EMA for LoRA finetuning.
         ema_decay=None,
+    ),
+    TrainConfig(
+        name="postbc_libero",
+        model=pi0.Pi0Config(),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=30_000,
     ),
     TrainConfig(
         name="pi0_fast_libero",

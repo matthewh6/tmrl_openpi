@@ -36,7 +36,7 @@ dependencies = [
     "filelock>=3.16.1",
     "beartype>=0.19.0",
     "treescope>=0.1.7",
-    "transformers==4.48.1",
+    "transformers==4.53.2",
 ]
 
 
@@ -134,7 +134,7 @@ testpaths = ["src", "scripts", "packages"]
 # Configuration for the 'uv' package manager
 [tool.uv]
 override-dependencies = [
-    "transformers>=4.57.0",
+    "transformers>=4.53.2",
     "jax[cuda12]>=0.5.3,<0.7.0",  # 0.6.x has better bf16 support but keeps DeviceLocalLayout API
     "gymnasium>=1.2.2", # override lerobot dependency (stemming from openpi repo)
     "protobuf>3.21",

@@ -218,6 +218,7 @@ class TMPI0Pytorch(PI0Pytorch):
 
         if noise_prefix is None:
             noise_prefix = self.sample_noise(prefix_embs.shape, prefix_embs.device)
+        noise_prefix = noise_prefix.to(dtype=prefix_embs.dtype)
 
         if time_prefix is None:
             time_prefix = torch.tensor(0.0, dtype=torch.float32, device=device)

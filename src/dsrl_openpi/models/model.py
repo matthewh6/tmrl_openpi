@@ -17,8 +17,7 @@ import orbax.checkpoint as ocp
 import safetensors.torch
 import torch
 
-from dsrl_openpi.models_pytorch import pi0_pytorch
-from dsrl_openpi.models_pytorch import tmpi0_pytorch
+from dsrl_openpi.models_pytorch import pi0_pytorch, tmpi0_pytorch, postbc_pytorch
 from dsrl_openpi.shared import image_tools
 import dsrl_openpi.shared.array_typing as at
 
@@ -254,7 +253,10 @@ class BaseModelConfig(abc.ABC):
     def load_pytorch(self, train_config, weight_path: str):
         logger.info(f"train_config: {train_config}")
         from dsrl_openpi.models.tmpi0 import TMPi0Config
-        if isinstance(train_config.model, TMPi0Config):
+        if 'postbc' in train_config.name:
+            logger.info("Loading POSTBCPytorch")
+            model = postbc_pytorch.PostBCPytorch(config=train_config.model)
+        elif isinstance(train_config.model, TMPi0Config):
             logger.info("Loading TMPI0Pytorch")
             model = tmpi0_pytorch.TMPI0Pytorch(config=train_config.model)
         else:

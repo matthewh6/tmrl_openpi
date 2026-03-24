@@ -122,9 +122,9 @@ class Policy(BasePolicy):
             raise ValueError(f"Bad noise shape {arr.shape}, expected ({bs}, {self._ah}, {self._ad})")
         return arr.astype(np.float32, copy=False)
 
-    def _normalize_time(self, cond_t, bs: int, batched: bool) -> np.ndarray:
+    def _normalize_time(self, tcont_context, bs: int, batched: bool) -> np.ndarray:
         """Coerce to float32 numpy (bs,) or (1,)."""
-        arr = self._to_np(cond_t).ravel()
+        arr = self._to_np(tcont_context).ravel()
         if batched:
             arr = np.broadcast_to(arr, (bs,)).copy()
         else:
@@ -137,18 +137,18 @@ class Policy(BasePolicy):
         obs: dict,
         *,
         action_noise: np.ndarray | None = None,
-        cond_t: np.ndarray | None = None,
-        prefix_noise: np.ndarray | None = None,
+        tcont_context: np.ndarray | None = None,
+        context_noise: np.ndarray | None = None,
     ) -> dict:  # type: ignore[misc]
         inputs, batched, bs = self._prepare_inputs(obs)
         kw = dict(self._sample_kwargs)
 
         if action_noise is not None:
             kw["noise"] = self._to_backend(self._normalize_noise(action_noise, bs))
-        if cond_t is not None:
-            kw["time_prefix"] = self._to_backend(self._normalize_time(cond_t, bs, batched))
-        if prefix_noise is not None:
-            arr = np.repeat(self._to_np(prefix_noise)[:, None, :], 816, axis=1)  # TODO: hardcoded prefix seq len
+        if tcont_context is not None:
+            kw["time_prefix"] = self._to_backend(self._normalize_time(tcont_context, bs, batched))
+        if context_noise is not None:
+            arr = np.repeat(self._to_np(context_noise)[:, None, :], 816, axis=1)  # TODO: hardcoded prefix seq len
             kw["noise_prefix"] = self._to_backend(arr)
 
         observation = _model.Observation.from_dict(inputs)
