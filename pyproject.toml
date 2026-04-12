@@ -1,5 +1,5 @@
 [project]
-name = "dsrl_openpi"
+name = "tmrl_openpi"
 version = "0.1.0"
 description = "Physical Intelligence open source repo"
 readme = "README.md"
