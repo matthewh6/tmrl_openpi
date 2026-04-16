@@ -21,8 +21,8 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "dsrl-openpi",
     "openpi-client",
+    "tmrl-openpi",
 ]
 overrides = [
     { name = "gymnasium", specifier = ">=1.2.2" },
@@ -720,104 +720,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/08/12/9c22a58c0b1e29271051222d8906257616da84135af9ed167c9e28f85cb3/docstring_parser-0.16.tar.gz", hash = "sha256:538beabd0af1e2db0146b6bd3caa526c35a34d61af9fd2887f3a8a27a739aa6e", size = 26565, upload-time = "2024-03-15T10:39:44.419Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/7c/e9fcff7623954d86bdc17782036cbf715ecab1bec4847c008557affe1ca8/docstring_parser-0.16-py3-none-any.whl", hash = "sha256:bf0a1387354d3691d102edef7ec124f219ef639982d096e26e3b60aeffa90637", size = 36533, upload-time = "2024-03-15T10:39:41.527Z" },
-]
-
-[[package]]
-name = "dsrl-openpi"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "augmax" },
-    { name = "beartype" },
-    { name = "boto3" },
-    { name = "dm-tree", version = "0.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
-    { name = "dm-tree", version = "0.1.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "einops" },
-    { name = "equinox" },
-    { name = "filelock" },
-    { name = "flatbuffers" },
-    { name = "flax" },
-    { name = "fsspec", extra = ["gcs"] },
-    { name = "gym-aloha" },
-    { name = "imageio" },
-    { name = "jax", extra = ["cuda12"] },
-    { name = "jaxtyping" },
-    { name = "ml-collections" },
-    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
-    { name = "numpydantic" },
-    { name = "opencv-python" },
-    { name = "openpi-client" },
-    { name = "orbax-checkpoint" },
-    { name = "pillow" },
-    { name = "s3fs" },
-    { name = "sentencepiece" },
-    { name = "torch", version = "2.7.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'aarch64' or sys_platform != 'linux'" },
-    { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'aarch64' and sys_platform == 'linux'" },
-    { name = "tqdm-loggable" },
-    { name = "transformers" },
-    { name = "treescope" },
-    { name = "types-boto3", extra = ["boto3", "s3"] },
-    { name = "typing-extensions" },
-    { name = "tyro" },
-    { name = "wandb" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "ipykernel" },
-    { name = "ipywidgets" },
-    { name = "matplotlib" },
-    { name = "pre-commit" },
-    { name = "pynvml" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "augmax", specifier = ">=0.3.4" },
-    { name = "beartype", specifier = ">=0.19.0" },
-    { name = "boto3", specifier = ">=1.35.7" },
-    { name = "dm-tree", specifier = ">=0.1.8" },
-    { name = "einops", specifier = ">=0.8.0" },
-    { name = "equinox", specifier = ">=0.11.8" },
-    { name = "filelock", specifier = ">=3.16.1" },
-    { name = "flatbuffers", specifier = ">=24.3.25" },
-    { name = "flax", specifier = "==0.10.2" },
-    { name = "fsspec", extras = ["gcs"], specifier = ">=2024.6.0" },
-    { name = "gym-aloha", specifier = ">=0.1.1" },
-    { name = "imageio", specifier = ">=2.36.1" },
-    { name = "jax", extras = ["cuda12"], specifier = "==0.5.0" },
-    { name = "jaxtyping", specifier = "==0.2.36" },
-    { name = "ml-collections", specifier = "==1.0.0" },
-    { name = "numpy", specifier = ">=1.26.4" },
-    { name = "numpydantic", specifier = ">=1.6.6" },
-    { name = "opencv-python", specifier = ">=4.10.0.84" },
-    { name = "openpi-client", editable = "packages/openpi-client" },
-    { name = "orbax-checkpoint", specifier = "==0.11.1" },
-    { name = "pillow", specifier = ">=11.0.0" },
-    { name = "s3fs", specifier = ">=2024.9.0" },
-    { name = "sentencepiece", specifier = ">=0.2.0" },
-    { name = "torch", specifier = ">=2.5.1" },
-    { name = "tqdm-loggable", specifier = ">=0.2" },
-    { name = "transformers", specifier = "==4.53.2" },
-    { name = "treescope", specifier = ">=0.1.7" },
-    { name = "types-boto3", extras = ["boto3", "s3"], specifier = ">=1.35.7" },
-    { name = "typing-extensions", specifier = ">=4.12.2" },
-    { name = "tyro", specifier = ">=0.9.5" },
-    { name = "wandb", specifier = ">=0.19.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "ipykernel", specifier = ">=6.29.5" },
-    { name = "ipywidgets", specifier = ">=8.1.5" },
-    { name = "matplotlib", specifier = ">=3.10.0" },
-    { name = "pre-commit", specifier = ">=4.0.1" },
-    { name = "pynvml", specifier = ">=12.0.0" },
-    { name = "pytest", specifier = ">=8.3.4" },
-    { name = "ruff", specifier = ">=0.8.6" },
 ]
 
 [[package]]
@@ -4046,6 +3948,104 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/62/e8/226cfc25d7eac00e783ff2ee4994830c4a42cd8690e207c4a8b93210f3d9/tensorstore-0.1.74-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e71637002a806bc1b0f0f05556d1c33493a43f3ab35f9632b3d48855677d93dc", size = 17031815, upload-time = "2025-04-24T15:42:09.239Z" },
     { url = "https://files.pythonhosted.org/packages/9a/09/dce8a0942d84f6bb039b5ea3e8bc6a479b1a9535cd216b0d42dd03c4f761/tensorstore-0.1.74-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c799edf9000aee68d6676e3d2f73d4e1a56fc817c47e150732f6d3bd2b1ef46d", size = 18378091, upload-time = "2025-04-24T15:42:13.546Z" },
     { url = "https://files.pythonhosted.org/packages/a6/23/5218575d25de9d8debfb3faf290a1e3b9a7b6be9e77ba07ff3a63a0bc899/tensorstore-0.1.74-cp313-cp313-win_amd64.whl", hash = "sha256:5da86437ffa1ee0f0c590c38daa2f4b548890ce66b1f470ac98714cb0eabdbf5", size = 12432635, upload-time = "2025-04-24T15:42:16.275Z" },
+]
+
+[[package]]
+name = "tmrl-openpi"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "augmax" },
+    { name = "beartype" },
+    { name = "boto3" },
+    { name = "dm-tree", version = "0.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "dm-tree", version = "0.1.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "einops" },
+    { name = "equinox" },
+    { name = "filelock" },
+    { name = "flatbuffers" },
+    { name = "flax" },
+    { name = "fsspec", extra = ["gcs"] },
+    { name = "gym-aloha" },
+    { name = "imageio" },
+    { name = "jax", extra = ["cuda12"] },
+    { name = "jaxtyping" },
+    { name = "ml-collections" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "numpydantic" },
+    { name = "opencv-python" },
+    { name = "openpi-client" },
+    { name = "orbax-checkpoint" },
+    { name = "pillow" },
+    { name = "s3fs" },
+    { name = "sentencepiece" },
+    { name = "torch", version = "2.7.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'aarch64' or sys_platform != 'linux'" },
+    { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'aarch64' and sys_platform == 'linux'" },
+    { name = "tqdm-loggable" },
+    { name = "transformers" },
+    { name = "treescope" },
+    { name = "types-boto3", extra = ["boto3", "s3"] },
+    { name = "typing-extensions" },
+    { name = "tyro" },
+    { name = "wandb" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "matplotlib" },
+    { name = "pre-commit" },
+    { name = "pynvml" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "augmax", specifier = ">=0.3.4" },
+    { name = "beartype", specifier = ">=0.19.0" },
+    { name = "boto3", specifier = ">=1.35.7" },
+    { name = "dm-tree", specifier = ">=0.1.8" },
+    { name = "einops", specifier = ">=0.8.0" },
+    { name = "equinox", specifier = ">=0.11.8" },
+    { name = "filelock", specifier = ">=3.16.1" },
+    { name = "flatbuffers", specifier = ">=24.3.25" },
+    { name = "flax", specifier = "==0.10.2" },
+    { name = "fsspec", extras = ["gcs"], specifier = ">=2024.6.0" },
+    { name = "gym-aloha", specifier = ">=0.1.1" },
+    { name = "imageio", specifier = ">=2.36.1" },
+    { name = "jax", extras = ["cuda12"], specifier = "==0.5.0" },
+    { name = "jaxtyping", specifier = "==0.2.36" },
+    { name = "ml-collections", specifier = "==1.0.0" },
+    { name = "numpy", specifier = ">=1.26.4" },
+    { name = "numpydantic", specifier = ">=1.6.6" },
+    { name = "opencv-python", specifier = ">=4.10.0.84" },
+    { name = "openpi-client", editable = "packages/openpi-client" },
+    { name = "orbax-checkpoint", specifier = "==0.11.1" },
+    { name = "pillow", specifier = ">=11.0.0" },
+    { name = "s3fs", specifier = ">=2024.9.0" },
+    { name = "sentencepiece", specifier = ">=0.2.0" },
+    { name = "torch", specifier = ">=2.5.1" },
+    { name = "tqdm-loggable", specifier = ">=0.2" },
+    { name = "transformers", specifier = "==4.53.2" },
+    { name = "treescope", specifier = ">=0.1.7" },
+    { name = "types-boto3", extras = ["boto3", "s3"], specifier = ">=1.35.7" },
+    { name = "typing-extensions", specifier = ">=4.12.2" },
+    { name = "tyro", specifier = ">=0.9.5" },
+    { name = "wandb", specifier = ">=0.19.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "ipywidgets", specifier = ">=8.1.5" },
+    { name = "matplotlib", specifier = ">=3.10.0" },
+    { name = "pre-commit", specifier = ">=4.0.1" },
+    { name = "pynvml", specifier = ">=12.0.0" },
+    { name = "pytest", specifier = ">=8.3.4" },
+    { name = "ruff", specifier = ">=0.8.6" },
 ]
 
 [[package]]

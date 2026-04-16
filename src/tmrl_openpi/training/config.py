@@ -682,7 +682,6 @@ _CONFIGS = [
         num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
     ),
     TrainConfig(
-        # This config is for fine-tuning pi05 on the *full* DROID dataset.
         # We use RLDS data loading to make training on this large dataset tractable.
         # For fine-tuning on your own DROID dataset, see below.
         name="cspi0_full_droid_finetune",
@@ -705,9 +704,9 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
         # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
         freeze_filter=nnx.Any(
-            nnx_utils.PathRegex(".*img.*"),          # SigLIP vision encoder
+            nnx_utils.PathRegex(".*img.*"), # SigLIP vision encoder
             nnx.All(
-                nnx_utils.PathRegex(".*llm.*"),      # all LLM params ...
+                nnx_utils.PathRegex(".*llm.*"),      # all LLM params
                 nnx.Not(nnx_utils.PathRegex(".*_1.*")),  # ... except action expert
             ),
         ),
@@ -895,8 +894,7 @@ _CONFIGS = [
     TrainConfig(
         name="cspi0_droid",
         model=cspi0.CSPi0Config(
-            action_horizon=16,
-            # action_horizon=10,
+            action_horizon=10,
         ),
         data=SimpleDataConfig(
             assets=AssetsConfig(asset_id="droid"),
@@ -1201,7 +1199,7 @@ _CONFIGS = [
         save_interval=250,
         keep_period=10000,
     ),
-    # Timestep-Modulated Pi Configs
+    # Context-Smoothed Pi0 Configs
     TrainConfig(
         name="cspi0_lora_bridge_1_cam",
         model=cspi0.CSPi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
