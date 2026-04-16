@@ -15,8 +15,9 @@ import tyro
 
 import tmrl_openpi.models.model as _model
 import tmrl_openpi.models.pi0 as pi0
-import tmrl_openpi.models.tmpi0 as tmpi0
+import tmrl_openpi.models.cspi0 as cspi0
 import tmrl_openpi.models.pi0_fast as pi0_fast
+import tmrl_openpi.shared.nnx_utils as nnx_utils
 import tmrl_openpi.models.tokenizer as _tokenizer
 import tmrl_openpi.policies.aloha_policy as aloha_policy
 import tmrl_openpi.policies.droid_policy as droid_policy
@@ -140,8 +141,8 @@ class ModelTransformFactory(GroupFactory):
                         _transforms.PadStatesAndActions(model_config.action_dim),
                     ],
                 )
-            case _model.ModelType.TMPi0:
-                assert isinstance(model_config, tmpi0.TMPi0Config)
+            case _model.ModelType.CSPi0:
+                assert isinstance(model_config, cspi0.CSPi0Config)
                 return _transforms.Group(
                     inputs=[
                         _transforms.InjectDefaultPrompt(self.default_prompt),
@@ -152,8 +153,8 @@ class ModelTransformFactory(GroupFactory):
                         _transforms.PadStatesAndActions(model_config.action_dim),
                     ],
                 )
-            case _model.ModelType.TMPi05:
-                assert isinstance(model_config, tmpi0.TMPi0Config)
+            case _model.ModelType.CSPi05:
+                assert isinstance(model_config, cspi0.CSPi0Config)
                 return _transforms.Group(
                     inputs=[
                         _transforms.InjectDefaultPrompt(self.default_prompt),
@@ -205,7 +206,7 @@ class DataConfigFactory(abc.ABC):
             repo_id=repo_id,
             asset_id=asset_id,
             norm_stats=self._load_norm_stats(epath.Path(self.assets.assets_dir or assets_dirs), asset_id),
-            use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.TMPi0,
+            use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.CSPi0,
         )
 
     def _load_norm_stats(self, assets_dir: epath.Path, asset_id: str | None) -> dict[str, _transforms.NormStats] | None:
@@ -243,7 +244,7 @@ class SimpleDataConfig(DataConfigFactory):
             self.create_base_config(assets_dirs, model_config),
             data_transforms=self.data_transforms(model_config),
             model_transforms=self.model_transforms(model_config),
-            use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.TMPi0,
+            use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.CSPi0,
         )
 
 @dataclasses.dataclass(frozen=True)
@@ -608,6 +609,44 @@ _CONFIGS = [
         ),
     ),
     TrainConfig(
+        name="pi05_aloha",
+        model=pi0.Pi0Config(pi05=True),
+        data=LeRobotAlohaDataConfig(
+            assets=AssetsConfig(asset_id="trossen"),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+    ),
+    TrainConfig(
+        name="pi05_aloha_pen_uncap",
+        model=pi0.Pi0Config(pi05=True),
+        data=LeRobotAlohaDataConfig(
+            repo_id="physical-intelligence/aloha_pen_uncap_diverse",
+            assets=AssetsConfig(
+                assets_dir="s3://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="trossen",
+            ),
+            default_prompt="uncap the pen",
+            repack_transforms=_transforms.Group(
+                inputs=[
+                    _transforms.RepackTransform(
+                        {
+                            "images": {
+                                "cam_high": "observation.images.cam_high",
+                                "cam_left_wrist": "observation.images.cam_left_wrist",
+                                "cam_right_wrist": "observation.images.cam_right_wrist",
+                            },
+                            "state": "observation.state",
+                            "actions": "action",
+                        }
+                    )
+                ]
+            ),
+            base_config=DataConfig(local_files_only=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=20_000,
+    ),
+    TrainConfig(
         # This config is for fine-tuning pi05 on the *full* DROID dataset.
         # We use RLDS data loading to make training on this large dataset tractable.
         # For fine-tuning on your own DROID dataset, see below.
@@ -646,8 +685,8 @@ _CONFIGS = [
         # This config is for fine-tuning pi05 on the *full* DROID dataset.
         # We use RLDS data loading to make training on this large dataset tractable.
         # For fine-tuning on your own DROID dataset, see below.
-        name="tmpi0_full_droid_finetune",
-        model=tmpi0.TMPi0Config(
+        name="cspi0_full_droid_finetune",
+        model=cspi0.CSPi0Config(
             pi05=False,
             action_dim=32,
             action_horizon=16,
@@ -664,6 +703,14 @@ _CONFIGS = [
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),          # SigLIP vision encoder
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),      # all LLM params ...
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),  # ... except action expert
+            ),
+        ),
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1_000,
             peak_lr=5e-5,
@@ -712,6 +759,122 @@ _CONFIGS = [
         keep_period=10_000,
         num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
     ),
+    TrainConfig(
+        name="pi0_full_droid_finetune_no_lang",
+        model=pi0.Pi0Config(
+            pi05=False,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid/1.0.1",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=32,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,
+    ),
+    TrainConfig(
+        name="pi05_full_droid_finetune_no_lang",
+        model=pi0.Pi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=256,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,
+    ),
+    TrainConfig(
+        name="pi05_droid_finetune",
+        model=pi0.Pi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid/1.0.1",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=256,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,
+    ),
+    TrainConfig(
+        name="pi0_fast_full_droid_finetune",
+        model=pi0_fast.Pi0FASTConfig(action_dim=8, action_horizon=10),
+        data=RLDSDroidDataConfig(
+            repo_id="droid/1.0.1",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi0_fast_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_fast_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=32,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,
+    ),
     #
     # Inference DROID configs.
     #
@@ -730,19 +893,27 @@ _CONFIGS = [
         ),
     ),
     TrainConfig(
-        name="tmpi0_droid",
-        model=tmpi0.TMPi0Config(
+        name="cspi0_droid",
+        model=cspi0.CSPi0Config(
             action_horizon=16,
             # action_horizon=10,
         ),
         data=SimpleDataConfig(
             assets=AssetsConfig(asset_id="droid"),
             data_transforms=lambda model: _transforms.Group(
-                inputs=[droid_policy.DroidInputs(model_type=ModelType.TMPi0)],
+                inputs=[droid_policy.DroidInputs(model_type=ModelType.CSPi0)],
                 outputs=[droid_policy.DroidOutputs()],
             ),
             base_config=DataConfig(
                 prompt_from_task=True,
+            ),
+        ),
+        # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
             ),
         ),
     ),
@@ -812,30 +983,25 @@ _CONFIGS = [
     ),
     TrainConfig(
         # Change the name to reflect your model and dataset.
-        name="tmpi0_libero",
-        # Here you define the model config -- In this example we use pi0 as the model
-        # architecture and perform *full* finetuning. in the examples below we show how to modify
-        # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
-        model=tmpi0.TMPi0Config(),
-        # Here you define the dataset you are training on. In this example we use the Libero
-        # dataset. For your own dataset, you can change the repo_id to point to your dataset.
-        # Also modify the DataConfig to use the new config you made for your dataset above.
+        name="cspi0_libero",
+        model=cspi0.CSPi0Config(),
         data=LeRobotLiberoDataConfig(
             repo_id="physical-intelligence/libero",
             base_config=DataConfig(
-                local_files_only=False,  # Set to True for local-only datasets.
-                # This flag determines whether we load the prompt (i.e. the task instruction) from the
-                # ``task`` field in the LeRobot dataset. If set to True, the prompt will show up in
-                # a field called ``prompt`` in the input dict. The recommended setting is True.
+                local_files_only=False,
                 prompt_from_task=True,
             ),
             extra_delta_transform=True,
         ),
-        # Here you define which pre-trained checkpoint you want to load to initialize the model.
-        # This should match the model config you chose above -- i.e. in this case we use the pi0 base model.
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
-        # Check the base TrainConfig class for a full list of available hyperparameters.
+        # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
+            ),
+        ),
         num_train_steps=30_000,
     ),
     TrainConfig(
@@ -1037,16 +1203,16 @@ _CONFIGS = [
     ),
     # Timestep-Modulated Pi Configs
     TrainConfig(
-        name="tmpi0_lora_bridge_1_cam",
-        model=tmpi0.TMPi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        name="cspi0_lora_bridge_1_cam",
+        model=cspi0.CSPi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotBridgeDataConfig(
             repo_id="jesbu1/bridge_v2_lerobot",
             how_many_cameras=1,
-            model_type=ModelType.TMPi0,
+            model_type=ModelType.CSPi0,
             base_config=DataConfig(local_files_only=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
-        freeze_filter=tmpi0.TMPi0Config(
+        freeze_filter=cspi0.CSPi0Config(
             paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
         ).get_freeze_filter(),
         ema_decay=None,
@@ -1059,15 +1225,23 @@ _CONFIGS = [
     ),
     #
     TrainConfig(
-        name="tmpi0_bridge_1_cam",
-        model=tmpi0.TMPi0Config(),
+        name="cspi0_bridge_1_cam",
+        model=cspi0.CSPi0Config(),
         data=LeRobotBridgeDataConfig(
             repo_id="jesbu1/bridge_v2_lerobot",
             how_many_cameras=1,
-            model_type=ModelType.TMPi0,
+            model_type=ModelType.CSPi0,
             base_config=DataConfig(local_files_only=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
+        # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
+            ),
+        ),
         ema_decay=None,
         num_train_steps=50_000,
         batch_size=32,
@@ -1079,18 +1253,18 @@ _CONFIGS = [
 
     # LoRA Fine-tuned WidowX from Bridge FT'd on pi0
     TrainConfig(
-        name="tmpi0_lora_widowx_from_bridge",
-        model=tmpi0.TMPi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        name="cspi0_lora_widowx_from_bridge",
+        model=cspi0.CSPi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotBridgeDataConfig(
             repo_id="hongmm2/uw_widowx_lerobot",
             how_many_cameras=1,
-            model_type=ModelType.TMPi0,
+            model_type=ModelType.CSPi0,
             base_config=DataConfig(local_files_only=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints/tmpi0_bridge_1_cam/tmpi0_bridge_1_cam_1.0/32000/params"
         ),
-        freeze_filter=tmpi0.TMPi0Config(
+        freeze_filter=cspi0.CSPi0Config(
             paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
         ).get_freeze_filter(),
         ema_decay=None,
@@ -1128,16 +1302,16 @@ _CONFIGS = [
 
 
     # TrainConfig(
-    #     name="tmpi05_lora_bridge_1_cam",
-    #     model=tmpi0.TMPi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+    #     name="cspi05_lora_bridge_1_cam",
+    #     model=cspi0.CSPi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
     #     data=LeRobotBridgeDataConfig(
     #         repo_id="jesbu1/bridge_v2_lerobot",
     #         how_many_cameras=1,
-    #         model_type=ModelType.TMPi05,
+    #         model_type=ModelType.CSPi05,
     #         base_config=DataConfig(local_files_only=True),
     #     ),
     #     weight_loader=weight_set-option -g mouse onloaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
-    #     freeze_filter=tmpi0.TMPi0Config(
+    #     freeze_filter=cspi0.CSPi0Config(
     #         paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
     #     ).get_freeze_filter(),
     #     ema_decay=None,
@@ -1149,12 +1323,12 @@ _CONFIGS = [
     #     keep_period=10000,
     # ),
     # TrainConfig(
-    #     name="tmpi05_bridge_1_cam",
-    #     model=tmpi0.TMPi0Config(pi05=True),
+    #     name="cspi05_bridge_1_cam",
+    #     model=cspi0.CSPi0Config(pi05=True),
     #     data=LeRobotBridgeDataConfig(
     #         repo_id="jesbu1/bridge_v2_lerobot",
     #         how_many_cameras=1,
-    #         model_type=ModelType.TMPi05,
+    #         model_type=ModelType.CSPi05,
     #         base_config=DataConfig(local_files_only=True),
     #     ),
     #     weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
@@ -1186,6 +1360,17 @@ _CONFIGS = [
         batch_size=2,
         model=pi0.Pi0Config(paligemma_variant="dummy", action_expert_variant="dummy"),
         weight_loader=weight_loaders.CheckpointWeightLoader("./checkpoints/debug/debug/9/params"),
+        overwrite=True,
+        exp_name="debug",
+        num_train_steps=10,
+        wandb_enabled=False,
+    ),
+    TrainConfig(
+        name="debug_pi05",
+        data=FakeDataConfig(),
+        batch_size=2,
+        model=pi0.Pi0Config(pi05=True, paligemma_variant="dummy", action_expert_variant="dummy"),
+        save_interval=100,
         overwrite=True,
         exp_name="debug",
         num_train_steps=10,

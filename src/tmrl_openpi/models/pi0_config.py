@@ -48,14 +48,9 @@ class Pi0Config(_model.BaseModelConfig):
         return _model.ModelType.PI0
 
     @override
-    # def create(self, rng: at.KeyArrayLike) -> "Pi0":
-    #     from tmrl_openpi.models.pi0 import Pi0
-
-    #     return Pi0(self, rngs=nnx.Rngs(rng))
-    
-    def create(self, rngs: nnx.Rngs) -> "Pi0":
+    def create(self, rng: at.KeyArrayLike) -> "Pi0":
         from tmrl_openpi.models.pi0 import Pi0
-        return Pi0(self, rngs=rngs)
+        return Pi0(self, rngs=nnx.Rngs(rng))
 
     @override
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[_model.Observation, _model.Actions]:

@@ -3,3 +3,6 @@
 *.pyc
 *.cpython-311.pyc
 __pycache__/
+
+*.slurm
+*.out

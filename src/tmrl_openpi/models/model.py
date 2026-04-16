@@ -17,7 +17,7 @@ import orbax.checkpoint as ocp
 import safetensors.torch
 import torch
 
-from tmrl_openpi.models_pytorch import pi0_pytorch, tmpi0_pytorch, postbc_pytorch
+from tmrl_openpi.models_pytorch import pi0_pytorch, cspi0_pytorch, postbc_pytorch
 from tmrl_openpi.shared import image_tools
 import tmrl_openpi.shared.array_typing as at
 
@@ -32,8 +32,8 @@ class ModelType(enum.Enum):
     PI0 = "pi0"
     PI0_FAST = "pi0_fast"
     PI05 = "pi05"
-    TMPi0 = "tmpi0"
-    TMPi05 = "tmpi05"
+    CSPi0 = "cspi0"
+    CSPi05 = "cspi05"
 
 
 # The model always expects these images
@@ -252,13 +252,13 @@ class BaseModelConfig(abc.ABC):
 
     def load_pytorch(self, train_config, weight_path: str):
         logger.info(f"train_config: {train_config}")
-        from tmrl_openpi.models.tmpi0 import TMPi0Config
+        from tmrl_openpi.models.cspi0 import CSPi0Config
         if 'postbc' in train_config.name:
-            logger.info("Loading POSTBCPytorch")
+            logger.info("Loading PostBCPytorch")
             model = postbc_pytorch.PostBCPytorch(config=train_config.model)
-        elif isinstance(train_config.model, TMPi0Config):
-            logger.info("Loading TMPI0Pytorch")
-            model = tmpi0_pytorch.TMPI0Pytorch(config=train_config.model)
+        elif isinstance(train_config.model, CSPi0Config):
+            logger.info("Loading CSPi0Pytorch")
+            model = cspi0_pytorch.CSPi0Pytorch(config=train_config.model)
         else:
             logger.info("Loading PI0Pytorch")
             model = pi0_pytorch.PI0Pytorch(config=train_config.model)
