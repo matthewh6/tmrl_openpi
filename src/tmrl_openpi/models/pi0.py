@@ -68,6 +68,7 @@ def posemb_sincos(
 class Pi0(_model.BaseModel):
     def __init__(self, config: Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
+        self.num_timestep_buckets = 1000
         self.pi05 = config.pi05
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
@@ -134,11 +135,6 @@ class Pi0(_model.BaseModel):
             batch_size = tokenized_inputs.shape[0]
             keep_mask = jnp.ones((batch_size, 1), dtype=jnp.bool_)
             keep_mask = jnp.logical_and(keep_mask, jnp.logical_not(force_dropout))
-            # jax.debug.print(
-            #     "Force Dropout Active: {fd} | Mean Keep Rate: {km}", 
-            #     fd=force_dropout, 
-            #     km=jnp.mean(keep_mask.astype(jnp.float32))
-            # )
             current_prompt_mask = jnp.logical_and(obs.tokenized_prompt_mask, keep_mask)
             tokens.append(tokenized_inputs)
             input_mask.append(current_prompt_mask)
@@ -216,6 +212,10 @@ class Pi0(_model.BaseModel):
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(
             observation, train=train, dropout_rng=dropout_rng if train else None
         )
+
+        # Discretize time to integer bucket indices, then cast back to float for posemb_sincos
+        time = (time * self.num_timestep_buckets).astype(jnp.int32).astype(jnp.float32)
+
         suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
         ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
@@ -255,8 +255,10 @@ class Pi0(_model.BaseModel):
 
         def step(carry):
             x_t, time = carry
+            # Discretize time to integer bucket indices, matching compute_loss
+            time_discrete = (jnp.broadcast_to(time, batch_size) * self.num_timestep_buckets).astype(jnp.int32).astype(jnp.float32)
             suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
-                observation, x_t, jnp.broadcast_to(time, batch_size)
+                observation, x_t, time_discrete
             )
             # `suffix_attn_mask` is shape (b, suffix_len, suffix_len) indicating how the suffix tokens can attend to each
             # other

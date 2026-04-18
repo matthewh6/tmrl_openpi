@@ -37,6 +37,8 @@ dependencies = [
     "beartype>=0.19.0",
     "treescope>=0.1.7",
     "transformers==4.53.2",
+    "lerobot",
+    "dlimp",
 ]
 
 
@@ -59,6 +61,7 @@ dev = [
 [tool.uv.sources]
 openpi-client = { workspace = true }
 lerobot = { git = "https://github.com/jesbu1/lerobot", rev = "7e0a570b5522b017639caf95472eb660bcd9e1f7" }
+dlimp = { git = "https://github.com/kvablack/dlimp", rev = "ad72ce3a9b414db2185bc0b38461d4101a65477a" }
 
 
 [tool.uv.workspace]
@@ -138,4 +141,5 @@ override-dependencies = [
     "jax[cuda12]>=0.5.3,<0.7.0",  # 0.6.x has better bf16 support but keeps DeviceLocalLayout API
     "gymnasium>=1.2.2", # override lerobot dependency (stemming from openpi repo)
     "protobuf>3.21",
+    "tensorflow>=2.18.0",
 ]

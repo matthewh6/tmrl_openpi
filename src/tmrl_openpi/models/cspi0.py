@@ -77,6 +77,11 @@ def posemb_dual_sincos(
 
 @dataclasses.dataclass(frozen=True)
 class CSPi0Config(Pi0Config):
+    # Number of DDIM timesteps for the context (VLM prefix) noise schedule.
+    context_noise_T: int = 1000
+    # Linear beta schedule endpoints for the context noise forward process.
+    context_beta_start: float = 1e-4
+    context_beta_end: float = 0.02
 
     @property
     @override
@@ -88,11 +93,17 @@ class CSPi0Config(Pi0Config):
         return CSPi0(self, rngs=nnx.Rngs(rng))
 
 
+def _rms_normalize(tokens: at.Float[at.Array, "b s emb"]) -> at.Float[at.Array, "b s emb"]:
+    """Normalize each token to unit RMS per embedding dimension."""
+    rms = jnp.sqrt(jnp.mean(jnp.square(tokens), axis=-1, keepdims=True))
+    return tokens / (rms + 1e-6)
+
+
 class CSPi0(Pi0):
     def __init__(self, config: CSPi0Config, rngs: nnx.Rngs):
         super().__init__(config, rngs)
-        self.T = 1000
-        betas = np.linspace(1e-4, 0.02, self.T, dtype=np.float32)
+        self.T = config.context_noise_T
+        betas = np.linspace(config.context_beta_start, config.context_beta_end, self.T, dtype=np.float32)
         alphas = 1.0 - betas
         # Store as Python list (not a JAX array) to avoid NNX treating it as state.
         self.alpha_bars = np.cumprod(alphas, axis=0, dtype=np.float32).tolist()
@@ -168,7 +179,8 @@ class CSPi0(Pi0):
 
         # forward pass of prefix
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
-        
+        prefix_tokens = _rms_normalize(prefix_tokens)
+
         # noise the prefix using a DDIM-style marginal controlled by time_prefix
         time_prefix = jax.random.uniform(time_prefix_rng, batch_shape)
         noise_prefix = jax.random.normal(noise_prefix_rng, prefix_tokens.shape)
@@ -214,8 +226,7 @@ class CSPi0(Pi0):
         batch_size = observation.state.shape[0]
         # first fill KV cache with a forward pass of the prefix
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
-
-        # jax.debug.print('time_prefix: {}', time_prefix)
+        prefix_tokens = _rms_normalize(prefix_tokens)
 
         if time_prefix is None:
             time_prefix = jnp.zeros(batch_size, dtype=jnp.float32)
@@ -223,11 +234,6 @@ class CSPi0(Pi0):
             time_prefix = jnp.broadcast_to(jnp.clip(time_prefix, 0.0, 1.0), (batch_size,))
             time_prefix = jnp.asarray(time_prefix, dtype=jnp.float32)
 
-        # if jnp.all(time_prefix == 0):
-        #     noisy_prefix_tokens = prefix_tokens
-        # else:
-        # jax.debug.print('noise_prefix: {}', noise_prefix)
-        # jax.debug.print('noise: {}', noise)
         if noise_prefix is None:
             if rng is None:
                 raise ValueError("Provide `rng` when supplying non-zero `time_prefix` without `noise_prefix`.")
@@ -244,7 +250,7 @@ class CSPi0(Pi0):
 
         noisy_norm = jnp.linalg.norm(noisy_prefix_tokens, axis=-1, keepdims=True)
         clean_norm = jnp.linalg.norm(prefix_tokens, axis=-1, keepdims=True)
-        cosine_sim = jnp.sum(noisy_prefix_tokens * prefix_tokens, axis=-1) / (noisy_norm.squeeze(-1) * clean_norm.squeeze(-1) + 1e-8)
+        # cosine_sim = jnp.sum(noisy_prefix_tokens * prefix_tokens, axis=-1) / (noisy_norm.squeeze(-1) * clean_norm.squeeze(-1) + 1e-8)
         # jax.debug.print('cosine_sim (mean): {}', jnp.mean(cosine_sim))
 
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)

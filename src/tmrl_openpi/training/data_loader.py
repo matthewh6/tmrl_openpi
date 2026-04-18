@@ -147,9 +147,20 @@ def create_data_loader(
             number of batches in the dataset, the data loader will loop over the dataset.
             If not provided, will iterate over the dataset indefinitely.
         num_workers: The number of worker processes to use. If zero, the data loader will
-            execute in the main process.
+            execute in the main process. Ignored for RLDS data loader (which handles
+            multiprocessing internally).
     """
     data_config = config.data.create(config.assets_dirs, config.model)
+
+    if data_config.rlds_data_dir is not None:
+        return _create_rlds_data_loader(
+            config,
+            data_config,
+            sharding=sharding,
+            skip_norm_stats=skip_norm_stats,
+            shuffle=shuffle,
+            num_batches=num_batches,
+        )
 
     dataset = create_dataset(data_config, config.model)
     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
@@ -177,6 +188,87 @@ def create_data_loader(
                 yield _model.Observation.from_dict(batch), batch["actions"]
 
     return DataLoaderImpl(data_config, data_loader)
+
+
+def _create_rlds_data_loader(
+    config: _config.TrainConfig,
+    data_config: _config.DataConfig,
+    *,
+    sharding: jax.sharding.Sharding | None,
+    skip_norm_stats: bool,
+    shuffle: bool,
+    num_batches: int | None,
+) -> DataLoader[tuple[_model.Observation, _model.Actions]]:
+    """Create an RLDS-based data loader for large datasets like DROID."""
+    import tmrl_openpi.training.droid_rlds_dataset as droid_rlds_dataset
+
+    if sharding is None:
+        sharding = jax.sharding.NamedSharding(
+            jax.sharding.Mesh(jax.devices(), ("B",)),
+            jax.sharding.PartitionSpec("B"),
+        )
+
+    norm_stats: dict = {}
+    if not skip_norm_stats:
+        if data_config.norm_stats is None:
+            raise ValueError(
+                "Normalization stats not found. "
+                "Make sure to run `scripts/compute_norm_stats.py --config-name=<your-config>`."
+            )
+        norm_stats = data_config.norm_stats
+
+    transform = _transforms.compose([
+        *data_config.repack_transforms.inputs,
+        *data_config.data_transforms.inputs,
+        _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
+        *data_config.model_transforms.inputs,
+    ])
+
+    rlds_ds = droid_rlds_dataset.DroidRldsDataset(
+        data_dir=data_config.rlds_data_dir,
+        batch_size=config.batch_size,
+        shuffle=shuffle,
+        action_chunk_size=config.model.action_horizon,
+        action_space=data_config.action_space,
+        filter_dict_path=data_config.filter_dict_path,
+    )
+
+    _sharding = sharding
+    _num_batches = num_batches
+
+    class RldsDataLoaderImpl(DataLoader):
+        def data_config(self) -> _config.DataConfig:
+            return data_config
+
+        def __iter__(self):
+            num_items = 0
+            for batch in rlds_ds:
+                if _num_batches is not None and num_items >= _num_batches:
+                    return
+
+                # Remove step_id key (not used by transforms)
+                batch.pop("step_id", None)
+
+                batch_size_actual = batch["actions"].shape[0]
+
+                # Apply transforms per element then re-collate into a batch
+                elements = []
+                for i in range(batch_size_actual):
+                    element = jax.tree.map(lambda x, _i=i: x[_i], batch)
+                    element = transform(element)
+                    elements.append(element)
+
+                stacked = _collate_fn(elements)
+
+                jax_batch = jax.tree.map(
+                    lambda x: jax.make_array_from_process_local_data(_sharding, x),
+                    stacked,
+                )
+
+                num_items += 1
+                yield _model.Observation.from_dict(jax_batch), jax_batch["actions"]
+
+    return RldsDataLoaderImpl()
 
 
 class TorchDataLoader:

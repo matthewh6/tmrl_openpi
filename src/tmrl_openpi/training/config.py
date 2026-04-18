@@ -365,26 +365,36 @@ class LeRobotAlohaDataConfig(DataConfigFactory):
 class LeRobotBridgeDataConfig(DataConfigFactory):
     """Data config for the Bridge dataset."""
 
-    # If true, will convert joint dimensions to deltas with respect to the current state before passing to the model.
-    # Gripper dimensions will remain in absolute values.
     model_type: ModelType = ModelType.PI0
     how_many_cameras: int = 1
     default_prompt: str = ""
-
     action_sequence_keys: Sequence[str] = ("action",)
+    # If true, converts the 6 joint dimensions to deltas relative to the current state before
+    # passing to the model. The 7th (gripper) dimension stays absolute. Use True for cspi0/cspi05
+    # configs to match the action representation used during pretraining on DROID.
+    use_delta_actions: bool = False
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         data_transforms = _transforms.Group(
             inputs=[
                 bridge_policy.BridgeInputs(
-                    use_delta_actions=False,
                     model_type=self.model_type,
                     how_many_cameras=self.how_many_cameras,
                 )
             ],
-            outputs=[bridge_policy.BridgeOutputs(use_delta_actions=False)],
+            outputs=[bridge_policy.BridgeOutputs()],
         )
+
+        if self.use_delta_actions:
+            # Bridge has 7-dim actions: 6 joints + 1 gripper.
+            # Convert joints to delta (relative to current state), leave gripper absolute.
+            delta_action_mask = _transforms.make_bool_mask(6, -1)
+            data_transforms = data_transforms.push(
+                inputs=[_transforms.DeltaActions(delta_action_mask)],
+                outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+            )
+
         obs_key = "observation.images.image_0"
         repack_dict = {
             "state": "observation.state",
@@ -516,13 +526,11 @@ class TrainConfig:
     data: DataConfigFactory = dataclasses.field(default_factory=FakeDataConfig)
 
     # Base directory for config assets (e.g., norm stats).
-    # assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
-    # assets_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
-    assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
+    assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
+    # assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
     # Base directory for checkpoints.
-    # checkpoint_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
-    # checkpoint_base_dir: str = "/mmfs1/gscratch/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
-    checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    checkpoint_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    # checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
 
     # Random seed that will be used by random generators during training.
     seed: int = 42
@@ -689,12 +697,17 @@ _CONFIGS = [
             pi05=False,
             action_dim=32,
             action_horizon=16,
+            # Context smoothing parameters: T steps in DDPM forward process for noising VLM prefix tokens.
+            context_noise_T=1000,
+            context_beta_start=1e-4,
+            context_beta_end=0.02,
         ),
         data=RLDSDroidDataConfig(
             repo_id="droid/1.0.1",
             # Set this to the path to your DROID RLDS dataset (the parent directory of the `droid` directory).
             # rlds_data_dir="/mnt/pi-data/kevin",
             rlds_data_dir="/gpfs/scrubbed/hongmm",
+            # JOINT_POSITION triggers DeltaActions: 7 joint dims converted to relative actions, gripper stays absolute.
             action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
             assets=AssetsConfig(
                 assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets/",
@@ -704,10 +717,10 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
         # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
         freeze_filter=nnx.Any(
-            nnx_utils.PathRegex(".*img.*"), # SigLIP vision encoder
+            nnx_utils.PathRegex(".*img.*"),  # SigLIP vision encoder
             nnx.All(
-                nnx_utils.PathRegex(".*llm.*"),      # all LLM params
-                nnx.Not(nnx_utils.PathRegex(".*_1.*")),  # ... except action expert
+                nnx_utils.PathRegex(".*llm.*"),          # all LLM params
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),  # ... except action expert (_1 suffix)
             ),
         ),
         lr_schedule=_optimizer.CosineDecaySchedule(
@@ -745,6 +758,48 @@ _CONFIGS = [
             ),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=256,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,  # Important: RLDS DataLoader requires num_workers=0, handles multi-processing internally
+    ),
+    TrainConfig(
+        # This config is for fine-tuning pi05 on the *full* DROID dataset.
+        # We use RLDS data loading to make training on this large dataset tractable.
+        # For fine-tuning on your own DROID dataset, see below.
+        name="cspi05_full_droid_finetune",
+        model=cspi0.CSPi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid",
+            # Set this to the path to your DROID RLDS dataset (the parent directory of the `droid` directory).
+            # rlds_data_dir="/mnt/pi-data/kevin",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
+            ),
+        ),
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1_000,
             peak_lr=5e-5,
@@ -849,6 +904,43 @@ _CONFIGS = [
         num_workers=0,
     ),
     TrainConfig(
+        name="cspi05_droid_finetune",
+        model=cspi0.CSPi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=RLDSDroidDataConfig(
+            repo_id="droid/1.0.1",
+            rlds_data_dir="/gpfs/scrubbed/hongmm",
+            action_space=droid_rlds_dataset.DroidActionSpace.JOINT_POSITION,
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets/",
+                asset_id="droid",
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
+            ),
+        ),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        num_train_steps=100_000,
+        batch_size=256,
+        log_interval=100,
+        save_interval=5000,
+        keep_period=10_000,
+        num_workers=0,
+    ),
+    TrainConfig(
         name="pi0_fast_full_droid_finetune",
         model=pi0_fast.Pi0FASTConfig(action_dim=8, action_horizon=10),
         data=RLDSDroidDataConfig(
@@ -906,14 +998,6 @@ _CONFIGS = [
                 prompt_from_task=True,
             ),
         ),
-        # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
-        freeze_filter=nnx.Any(
-            nnx_utils.PathRegex(".*img.*"),
-            nnx.All(
-                nnx_utils.PathRegex(".*llm.*"),
-                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
-            ),
-        ),
     ),
     TrainConfig(
         name="pi0_fast_droid",
@@ -937,9 +1021,36 @@ _CONFIGS = [
             data_transforms=lambda model: _transforms.Group(
                 inputs=[droid_policy.DroidInputs(model_type=ModelType.PI05)],
                 outputs=[droid_policy.DroidOutputs()],
+            ).push(
+                inputs=[_transforms.DeltaActions(_transforms.make_bool_mask(7, -1))],
+                outputs=[_transforms.AbsoluteActions(_transforms.make_bool_mask(7, -1))],
             ),
             base_config=DataConfig(
                 prompt_from_task=True,
+            ),
+        ),
+    ),
+    TrainConfig(
+        name="cspi05_droid",
+        model=cspi0.CSPi0Config(action_horizon=15, pi05=True),
+        data=SimpleDataConfig(
+            assets=AssetsConfig(asset_id="droid"),
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[droid_policy.DroidInputs(model_type=ModelType.CSPi05)],
+                outputs=[droid_policy.DroidOutputs()],
+            ).push(
+                inputs=[_transforms.DeltaActions(_transforms.make_bool_mask(7, -1))],
+                outputs=[_transforms.AbsoluteActions(_transforms.make_bool_mask(7, -1))],
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+            ),
+        ),
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
             ),
         ),
     ),
@@ -1027,17 +1138,6 @@ _CONFIGS = [
         ema_decay=None,
     ),
     TrainConfig(
-        name="postbc_libero",
-        model=pi0.Pi0Config(),
-        data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
-            base_config=DataConfig(prompt_from_task=True),
-            extra_delta_transform=True,
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
-        num_train_steps=30_000,
-    ),
-    TrainConfig(
         name="pi0_fast_libero",
         # Here is an example of loading a pi0-FAST model for full finetuning.
         # Modify action_dim and action_horizon to match your dataset (action horizon is equal to
@@ -1106,6 +1206,35 @@ _CONFIGS = [
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         num_train_steps=30_000,
+    ),
+    TrainConfig(
+        # Change the name to reflect your model and dataset.
+        name="cspi05_libero",
+        model=cspi0.CSPi0Config(pi05=True),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
+        freeze_filter=nnx.Any(
+            nnx_utils.PathRegex(".*img.*"),
+            nnx.All(
+                nnx_utils.PathRegex(".*llm.*"),
+                nnx.Not(nnx_utils.PathRegex(".*_1.*")),
+            ),
+        ),
     ),
     #
     # Fine-tuning Aloha configs.
@@ -1208,6 +1337,7 @@ _CONFIGS = [
             how_many_cameras=1,
             model_type=ModelType.CSPi0,
             base_config=DataConfig(local_files_only=True),
+            use_delta_actions=True,
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
         freeze_filter=cspi0.CSPi0Config(
@@ -1230,6 +1360,7 @@ _CONFIGS = [
             how_many_cameras=1,
             model_type=ModelType.CSPi0,
             base_config=DataConfig(local_files_only=True),
+            use_delta_actions=True,
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
         # Freeze the VLM (SigLIP + PaliGemma LLM), only train action expert + projection heads.
@@ -1258,6 +1389,7 @@ _CONFIGS = [
             how_many_cameras=1,
             model_type=ModelType.CSPi0,
             base_config=DataConfig(local_files_only=True),
+            use_delta_actions=True,
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints/tmpi0_bridge_1_cam/tmpi0_bridge_1_cam_1.0/32000/params"

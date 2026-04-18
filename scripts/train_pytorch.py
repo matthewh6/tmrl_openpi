@@ -42,7 +42,6 @@ import wandb
 
 import tmrl_openpi.models.pi0_config
 import tmrl_openpi.models_pytorch.pi0_pytorch
-import tmrl_openpi.models_pytorch.postbc_pytorch
 import tmrl_openpi.models_pytorch.cspi0_pytorch
 import tmrl_openpi.shared.normalize as _normalize
 import tmrl_openpi.training.config as _config
@@ -371,10 +370,7 @@ def train_loop(config: _config.TrainConfig):
         model_cfg = config.model
         object.__setattr__(model_cfg, "dtype", config.pytorch_training_precision)
 
-    if config.name.startswith("postbc"):
-        logging.info("Building PostBCPytorch model")
-        model = tmrl_openpi.models_pytorch.postbc_pytorch.PostBCPytorch(model_cfg).to(device)
-    elif config.name.startswith("cspi0"):
+    if config.name.startswith("cspi0"):
         logging.info("Building CSPi0Pytorch model")
         model = tmrl_openpi.models_pytorch.cspi0_pytorch.CSPi0Pytorch(model_cfg).to(device)
     else:
@@ -470,31 +466,6 @@ def train_loop(config: _config.TrainConfig):
         progress = min(1.0, (step - warmup_steps) / max(1, decay_steps - warmup_steps))
         cos = 0.5 * (1 + np.cos(np.pi * progress))
         return end_lr + (peak_lr - end_lr) * cos
-
-    # --- PostBC: fit the variance ensemble before main training ---
-    raw_model = model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
-    if isinstance(raw_model, tmrl_openpi.models_pytorch.postbc_pytorch.PostBCPytorch):
-        MAX_ENSEMBLE_SAMPLES = 50_000
-        logging.info(f"PostBC detected — collecting up to {MAX_ENSEMBLE_SAMPLES} samples for ensemble fitting...")
-        ensemble_states, ensemble_actions = [], []
-        n_collected = 0
-        for obs_batch, act_batch in loader:
-            obs_batch = jax.tree.map(lambda x: x.to(device), obs_batch)
-            act_batch = act_batch.to(torch.float32).to(device)
-            ensemble_states.append(obs_batch.state.float())
-            ensemble_actions.append(act_batch)
-            n_collected += act_batch.shape[0]
-            if n_collected >= MAX_ENSEMBLE_SAMPLES:
-                break
-        all_states = torch.cat(ensemble_states, dim=0)
-        all_actions = torch.cat(ensemble_actions, dim=0)
-        logging.info(f"Collected {all_states.shape[0]} samples. Fitting ensemble...")
-        raw_model.fit_ensemble(all_states, all_actions, num_epochs=500, batch_size=256, device=device)
-        del all_states, all_actions, ensemble_states, ensemble_actions
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-        logging.info("Ensemble fitting complete.")
 
     model.train()
     start_time = time.time()
