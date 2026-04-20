@@ -171,9 +171,7 @@ def visualize(
 
         # Annotate with mean and variance
         info = (
-            f"μ‖tok‖ = {st['mean_token_norm']:.3f}\n"
-            f"σ‖tok‖ = {st['std_token_norm']:.3f}\n"
-            f"var     = {st['variance']:.3f}"
+            f"μ‖tok‖ = {st['mean_token_norm']:.3f}\nσ‖tok‖ = {st['std_token_norm']:.3f}\nvar     = {st['variance']:.3f}"
         )
         ax.text(
             0.03,
@@ -290,7 +288,7 @@ def main():
     model, config = load_model(args.config_name, args.checkpoint_path)
     alpha_bars: list = model.alpha_bars
     T = len(alpha_bars)
-    logger.info(f"Noise schedule: T={T}, ᾱ_0={alpha_bars[0]:.5f}, ᾱ_{T-1}={alpha_bars[-1]:.7f}")
+    logger.info(f"Noise schedule: T={T}, ᾱ_0={alpha_bars[0]:.5f}, ᾱ_{T - 1}={alpha_bars[-1]:.7f}")
 
     logger.info(f"Embedding {args.batch_size} observations...")
     prefix_tokens, prefix_mask = get_prefix_tokens(model, config, batch_size=args.batch_size)

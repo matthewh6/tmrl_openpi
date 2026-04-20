@@ -391,9 +391,9 @@ def populate_dataset(
                 # Assign the CHW tensor directly
                 frame[f"observation.images.{camera}"] = img
 
-            assert (
-                all_cams_present
-            ), f"Camera {camera} missing image data for frame {i} in {traj_path.name}. Skipping frame."
+            assert all_cams_present, (
+                f"Camera {camera} missing image data for frame {i} in {traj_path.name}. Skipping frame."
+            )
 
             if not OLD_LEROBOT:
                 dataset.add_frame(frame, task=task)
