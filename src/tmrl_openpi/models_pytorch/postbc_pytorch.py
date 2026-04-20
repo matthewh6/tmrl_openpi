@@ -1,9 +1,11 @@
 import logging
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
+from torch import nn
 import torch.nn.functional as F  # noqa: N812
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset
 
 from tmrl_openpi.models_pytorch.pi0_pytorch import PI0Pytorch
 
@@ -51,10 +53,7 @@ class PosteriorVarianceEstimator(nn.Module):
         super().__init__()
         self.ensemble_size = ensemble_size
         self.members = nn.ModuleList(
-            [
-                EnsembleMember(obs_dim, action_dim, action_horizon, hidden_size, num_layers)
-                for _ in range(ensemble_size)
-            ]
+            [EnsembleMember(obs_dim, action_dim, action_horizon, hidden_size, num_layers) for _ in range(ensemble_size)]
         )
         self._fitted = False
 

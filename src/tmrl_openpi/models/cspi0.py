@@ -3,18 +3,16 @@ import logging
 
 import einops
 import flax.nnx as nnx
-import flax.nnx.bridge as nnx_bridge
 import jax
 import jax.numpy as jnp
 import numpy as np
 from typing_extensions import override
 
 from tmrl_openpi.models import model as _model
-import tmrl_openpi.models.siglip as _siglip
-from tmrl_openpi.shared import array_typing as at
-import tmrl_openpi.shared.nnx_utils as nnx_utils
-from tmrl_openpi.models.pi0 import Pi0, make_attn_mask
+from tmrl_openpi.models.pi0 import Pi0
+from tmrl_openpi.models.pi0 import make_attn_mask
 from tmrl_openpi.models.pi0_config import Pi0Config
+from tmrl_openpi.shared import array_typing as at
 
 logger = logging.getLogger("tmrl_openpi")
 
@@ -194,9 +192,7 @@ class CSPi0(Pi0):
         noisy_prefix_tokens = sqrt_ab * prefix_tokens + sqrt_bb * noise_prefix
 
         # forward pass of suffix
-        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
-            observation, x_t, time, time_prefix
-        )
+        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time, time_prefix)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
         ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
         attn_mask = make_attn_mask(input_mask, ar_mask)
@@ -256,6 +252,7 @@ class CSPi0(Pi0):
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
         _, kv_cache = self.PaliGemma.llm([noisy_prefix_tokens, None], mask=prefix_attn_mask, positions=positions)
+
         def step(carry):
             x_t, time = carry
             suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
@@ -279,7 +276,11 @@ class CSPi0(Pi0):
             positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
 
             (prefix_out, suffix_out), _ = self.PaliGemma.llm(
-                [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache, adarms_cond=[None, adarms_cond]
+                [None, suffix_tokens],
+                mask=full_attn_mask,
+                positions=positions,
+                kv_cache=kv_cache,
+                adarms_cond=[None, adarms_cond],
             )
             assert prefix_out is None
             v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
@@ -290,6 +291,6 @@ class CSPi0(Pi0):
             x_t, time = carry
             # robust to floating-point error
             return time >= -dt / 2
+
         x_0, _ = jax.lax.while_loop(cond, step, (noise, 1.0))
         return x_0
-    

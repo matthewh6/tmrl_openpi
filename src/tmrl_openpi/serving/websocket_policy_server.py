@@ -2,12 +2,12 @@ import asyncio
 import logging
 import traceback
 
+import jax
+import numpy as np
 from openpi_client import base_policy as _base_policy
 from openpi_client import msgpack_numpy
 import websockets.asyncio.server
 import websockets.frames
-import jax
-import numpy as np
 
 
 class WebsocketPolicyServer:

@@ -41,8 +41,8 @@ import tqdm
 import wandb
 
 import tmrl_openpi.models.pi0_config
-import tmrl_openpi.models_pytorch.pi0_pytorch
 import tmrl_openpi.models_pytorch.cspi0_pytorch
+import tmrl_openpi.models_pytorch.pi0_pytorch
 import tmrl_openpi.shared.normalize as _normalize
 import tmrl_openpi.training.config as _config
 import tmrl_openpi.training.data_loader as _data

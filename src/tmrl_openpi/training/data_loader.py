@@ -89,7 +89,7 @@ def create_dataset(data_config: _config.DataConfig, model_config: _model.BaseMod
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
 
-    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)  # , local_files_only=data_config.local_files_only)
+    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
     dataset = lerobot_dataset.LeRobotDataset(
         data_config.repo_id,
         delta_timestamps={
@@ -217,12 +217,14 @@ def _create_rlds_data_loader(
             )
         norm_stats = data_config.norm_stats
 
-    transform = _transforms.compose([
-        *data_config.repack_transforms.inputs,
-        *data_config.data_transforms.inputs,
-        _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
-        *data_config.model_transforms.inputs,
-    ])
+    transform = _transforms.compose(
+        [
+            *data_config.repack_transforms.inputs,
+            *data_config.data_transforms.inputs,
+            _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
+            *data_config.model_transforms.inputs,
+        ]
+    )
 
     rlds_ds = droid_rlds_dataset.DroidRldsDataset(
         data_dir=data_config.rlds_data_dir,

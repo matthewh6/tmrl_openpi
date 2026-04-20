@@ -19,43 +19,46 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Optional, Union
+from collections.abc import Callable
 
 import torch
 from torch import nn
 
 from ...activations import ACT2FN
-from ...cache_utils import Cache, DynamicCache
+from ...cache_utils import Cache
+from ...cache_utils import DynamicCache
 from ...generation import GenerationMixin
 from ...masking_utils import create_causal_mask
 from ...modeling_flash_attention_utils import FlashAttentionKwargs
 from ...modeling_layers import GradientCheckpointingLayer
-from ...modeling_outputs import (
-    BaseModelOutputWithPast,
-    CausalLMOutputWithPast,
-    SequenceClassifierOutputWithPast,
-    TokenClassifierOutput,
-)
-from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
+from ...modeling_outputs import BaseModelOutputWithPast
+from ...modeling_outputs import CausalLMOutputWithPast
+from ...modeling_outputs import SequenceClassifierOutputWithPast
+from ...modeling_outputs import TokenClassifierOutput
+from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS
+from ...modeling_rope_utils import dynamic_rope_update
+from ...modeling_utils import ALL_ATTENTION_FUNCTIONS
+from ...modeling_utils import PreTrainedModel
 from ...processing_utils import Unpack
-from ...utils import LossKwargs, auto_docstring, can_return_tuple, logging
+from ...utils import LossKwargs
+from ...utils import auto_docstring
+from ...utils import can_return_tuple
+from ...utils import logging
 from .configuration_gemma import GemmaConfig
-
 
 logger = logging.get_logger(__name__)
 
 
 class GemmaRMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6, cond_dim: Optional[int] = None):
+    def __init__(self, dim: int, eps: float = 1e-6, cond_dim: int | None = None):
         super().__init__()
         self.eps = eps
         self.dim = dim
         self.cond_dim = cond_dim
-        
+
         # Dense layer for adaptive normalization (if cond_dim is provided)
         if cond_dim is not None:
-            #self.dense = nn.Linear(cond_dim, dim * 3, bias=True, dtype=torch.bfloat16)
+            # self.dense = nn.Linear(cond_dim, dim * 3, bias=True, dtype=torch.bfloat16)
             self.dense = nn.Linear(cond_dim, dim * 3, bias=True)
             # Initialize with zeros (matches source implementation)
             nn.init.zeros_(self.dense.weight)
@@ -73,32 +76,32 @@ class GemmaRMSNorm(nn.Module):
     def forward(self, x, cond=None):
         dtype = x.dtype  # original dtype, could be half-precision
         normed_inputs = self._norm(x)
-        
+
         if cond is None or self.dense is None:
             # regular RMSNorm
             # scale by learned parameter in float32 (matches source implementation)
             normed_inputs = normed_inputs * (1.0 + self.weight.float())
             return normed_inputs.to(dtype), None  # return in original dtype with None gate
-        
+
         # adaptive RMSNorm (if cond is provided and dense layer exists)
         if cond.shape[-1] != self.cond_dim:
             raise ValueError(f"Expected cond dimension {self.cond_dim}, got {cond.shape[-1]}")
-        
-        #self.dense.to(dtype=torch.bfloat16).to(dtype=torch.float32)
+
+        # self.dense.to(dtype=torch.bfloat16).to(dtype=torch.float32)
         modulation = self.dense(cond)
         # Reshape modulation to broadcast properly: [batch, 1, features] for [batch, seq, features]
         if len(x.shape) == 3:  # [batch, seq, features]
             modulation = modulation.unsqueeze(1)
-        
+
         scale, shift, gate = torch.chunk(modulation, 3, dim=-1)
-        
+
         # Apply adaptive normalization: use model weight dtype to ensure compatibility
         # model_dtype = self.dense.weight.dtype  # Use the model's dtype (bfloat16)
         # scale = scale.to(model_dtype)
         # shift = shift.to(model_dtype)
         # gate = gate.to(model_dtype)
         # normed_inputs = normed_inputs.to(model_dtype)  # Convert normed_inputs to model dtype
-        
+
         normed_inputs = normed_inputs * (1 + scale.to(torch.float32)) + shift.to(torch.float32)
 
         return normed_inputs.to(dtype), gate.to(dtype)
@@ -209,12 +212,12 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 def _gated_residual(x, y, gate):
     """
     Applies gated residual connection with optional gate parameter.
-    
+
     Args:
         x: Input tensor (residual)
         y: Output tensor to be added
         gate: Optional gate tensor to modulate the addition
-        
+
     Returns:
         x + y if gate is None, otherwise x + y * gate
     """
@@ -232,7 +235,7 @@ def eager_attention_forward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
+    attention_mask: torch.Tensor | None,
     scaling: float,
     dropout: float = 0.0,
     **kwargs,
@@ -283,12 +286,12 @@ class GemmaAttention(nn.Module):
         self,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
-        attention_mask: Optional[torch.Tensor],
-        past_key_value: Optional[Cache] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        attention_mask: torch.Tensor | None,
+        past_key_value: Cache | None = None,
+        cache_position: torch.LongTensor | None = None,
         use_cache: bool = False,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor], Optional[tuple[torch.Tensor]]]:        
+    ) -> tuple[torch.Tensor, torch.Tensor | None, tuple[torch.Tensor] | None]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -337,23 +340,23 @@ class GemmaDecoderLayer(GradientCheckpointingLayer):
         self.self_attn = GemmaAttention(config=config, layer_idx=layer_idx)
 
         self.mlp = GemmaMLP(config)
-        cond_dim = getattr(config, 'adarms_cond_dim', None) if getattr(config, 'use_adarms', False) else None
+        cond_dim = getattr(config, "adarms_cond_dim", None) if getattr(config, "use_adarms", False) else None
         self.input_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim)
         self.post_attention_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim)
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
-        position_embeddings: Optional[tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
-        adarms_cond: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_value: Cache | None = None,
+        output_attentions: bool | None = False,
+        use_cache: bool | None = False,
+        cache_position: torch.LongTensor | None = None,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None,  # necessary, but kept here for BC
+        adarms_cond: torch.Tensor | None = None,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> tuple[torch.FloatTensor, Optional[tuple[torch.FloatTensor, torch.FloatTensor]]]:
+    ) -> tuple[torch.FloatTensor, tuple[torch.FloatTensor, torch.FloatTensor] | None]:
         residual = hidden_states
         hidden_states, gate = self.input_layernorm(hidden_states, adarms_cond)
 
@@ -411,7 +414,7 @@ class GemmaPreTrainedModel(PreTrainedModel):
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
         elif isinstance(module, GemmaRMSNorm):
-            if hasattr(module, 'weight'):
+            if hasattr(module, "weight"):
                 module.weight.data.fill_(1.0)
 
 
@@ -427,7 +430,7 @@ class GemmaModel(GemmaPreTrainedModel):
             [GemmaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
 
-        cond_dim = getattr(config, 'adarms_cond_dim', None) if getattr(config, 'use_adarms', False) else None
+        cond_dim = getattr(config, "adarms_cond_dim", None) if getattr(config, "use_adarms", False) else None
         self.norm = GemmaRMSNorm(config.hidden_size, eps=config.rms_norm_eps, cond_dim=cond_dim)
         self.rotary_emb = GemmaRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
@@ -445,16 +448,16 @@ class GemmaModel(GemmaPreTrainedModel):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        adarms_cond: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
+        adarms_cond: torch.Tensor | None = None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> BaseModelOutputWithPast:
         """
@@ -513,7 +516,7 @@ class GemmaModel(GemmaPreTrainedModel):
         # Gemma downcasts the below to float16, causing sqrt(3072)=55.4256 to become 55.5
         # See https://github.com/huggingface/transformers/pull/29402
         normalizer = torch.tensor(self.config.hidden_size**0.5, dtype=hidden_states.dtype)
-        #hidden_states = hidden_states * normalizer
+        # hidden_states = hidden_states * normalizer
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -595,18 +598,18 @@ class GemmaForCausalLM(GemmaPreTrainedModel, GenerationMixin):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        logits_to_keep: Union[int, torch.Tensor] = 0,
-        adarms_cond: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
+        logits_to_keep: int | torch.Tensor = 0,
+        adarms_cond: torch.Tensor | None = None,
         **kwargs: Unpack[KwargsForCausalLM],
     ) -> CausalLMOutputWithPast:
         r"""
@@ -706,16 +709,16 @@ class GemmaForSequenceClassification(GemmaPreTrainedModel):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        adarms_cond: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        adarms_cond: torch.Tensor | None = None,
     ) -> SequenceClassifierOutputWithPast:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -805,16 +808,16 @@ class GemmaForTokenClassification(GemmaPreTrainedModel):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        adarms_cond: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        adarms_cond: torch.Tensor | None = None,
     ) -> TokenClassifierOutput:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -854,9 +857,9 @@ class GemmaForTokenClassification(GemmaPreTrainedModel):
 
 
 __all__ = [
-    "GemmaModel",
     "GemmaForCausalLM",
     "GemmaForSequenceClassification",
     "GemmaForTokenClassification",
+    "GemmaModel",
     "GemmaPreTrainedModel",
 ]

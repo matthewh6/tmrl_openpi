@@ -3,7 +3,8 @@ from typing import Literal
 
 import torch
 from torch import nn
-from transformers import Cache, GemmaForCausalLM
+from transformers import Cache
+from transformers import GemmaForCausalLM
 from transformers import PaliGemmaForConditionalGeneration
 from transformers.models.auto import CONFIG_MAPPING
 from transformers.models.gemma import modeling_gemma

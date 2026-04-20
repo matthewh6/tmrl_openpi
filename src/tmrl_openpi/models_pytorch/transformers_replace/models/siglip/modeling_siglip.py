@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2024 Google AI and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,26 +13,37 @@
 # limitations under the License.
 """PyTorch Siglip model."""
 
-import math
-import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Union
+import math
+from typing import Any
+import warnings
 
 import numpy as np
 import torch
-import torch.utils.checkpoint
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from torch.nn import BCEWithLogitsLoss
+from torch.nn import CrossEntropyLoss
+from torch.nn import MSELoss
 from torch.nn.init import _calculate_fan_in_and_fan_out
+import torch.utils.checkpoint
 
 from ...activations import ACT2FN
 from ...modeling_attn_mask_utils import _prepare_4d_attention_mask
 from ...modeling_layers import GradientCheckpointingLayer
-from ...modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling, ImageClassifierOutput
-from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-from ...utils import ModelOutput, auto_docstring, can_return_tuple, logging, torch_int
-from .configuration_siglip import SiglipConfig, SiglipTextConfig, SiglipVisionConfig
-
+from ...modeling_outputs import BaseModelOutput
+from ...modeling_outputs import BaseModelOutputWithPooling
+from ...modeling_outputs import ImageClassifierOutput
+from ...modeling_utils import ALL_ATTENTION_FUNCTIONS
+from ...modeling_utils import PreTrainedModel
+from ...utils import ModelOutput
+from ...utils import auto_docstring
+from ...utils import can_return_tuple
+from ...utils import logging
+from ...utils import torch_int
+from .configuration_siglip import SiglipConfig
+from .configuration_siglip import SiglipTextConfig
+from .configuration_siglip import SiglipVisionConfig
 
 logger = logging.get_logger(__name__)
 
@@ -146,10 +156,10 @@ class SiglipVisionModelOutput(ModelOutput):
         The image embeddings obtained by applying the projection layer to the pooler_output.
     """
 
-    image_embeds: Optional[torch.FloatTensor] = None
-    last_hidden_state: Optional[torch.FloatTensor] = None
-    hidden_states: Optional[tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[tuple[torch.FloatTensor, ...]] = None
+    image_embeds: torch.FloatTensor | None = None
+    last_hidden_state: torch.FloatTensor | None = None
+    hidden_states: tuple[torch.FloatTensor, ...] | None = None
+    attentions: tuple[torch.FloatTensor, ...] | None = None
 
 
 @dataclass
@@ -165,10 +175,10 @@ class SiglipTextModelOutput(ModelOutput):
         The text embeddings obtained by applying the projection layer to the pooler_output.
     """
 
-    text_embeds: Optional[torch.FloatTensor] = None
-    last_hidden_state: Optional[torch.FloatTensor] = None
-    hidden_states: Optional[tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[tuple[torch.FloatTensor, ...]] = None
+    text_embeds: torch.FloatTensor | None = None
+    last_hidden_state: torch.FloatTensor | None = None
+    hidden_states: tuple[torch.FloatTensor, ...] | None = None
+    attentions: tuple[torch.FloatTensor, ...] | None = None
 
 
 @dataclass
@@ -194,11 +204,11 @@ class SiglipOutput(ModelOutput):
         The output of the [`SiglipVisionModel`].
     """
 
-    loss: Optional[torch.FloatTensor] = None
-    logits_per_image: Optional[torch.FloatTensor] = None
-    logits_per_text: Optional[torch.FloatTensor] = None
-    text_embeds: Optional[torch.FloatTensor] = None
-    image_embeds: Optional[torch.FloatTensor] = None
+    loss: torch.FloatTensor | None = None
+    logits_per_image: torch.FloatTensor | None = None
+    logits_per_text: torch.FloatTensor | None = None
+    text_embeds: torch.FloatTensor | None = None
+    image_embeds: torch.FloatTensor | None = None
     text_model_output: BaseModelOutputWithPooling = None
     vision_model_output: BaseModelOutputWithPooling = None
 
@@ -297,9 +307,9 @@ class SiglipTextEmbeddings(nn.Module):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
     ) -> torch.Tensor:
         seq_length = input_ids.shape[-1] if input_ids is not None else inputs_embeds.shape[-2]
         max_position_embedding = self.position_embedding.weight.shape[0]
@@ -327,7 +337,7 @@ def eager_attention_forward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    attention_mask: Optional[torch.Tensor],
+    attention_mask: torch.Tensor | None,
     scaling: float,
     dropout: float = 0.0,
     **kwargs,
@@ -371,9 +381,9 @@ class SiglipAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = False,
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        attention_mask: torch.Tensor | None = None,
+        output_attentions: bool | None = False,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Input shape: Batch x Time x Channel"""
 
         batch_size, seq_length, embed_dim = hidden_states.shape
@@ -433,7 +443,7 @@ class SiglipMLP(nn.Module):
 
 
 class SiglipEncoderLayer(GradientCheckpointingLayer):
-    def __init__(self, config: Union[SiglipVisionConfig, SiglipTextConfig]):
+    def __init__(self, config: SiglipVisionConfig | SiglipTextConfig):
         super().__init__()
         self.embed_dim = config.hidden_size
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
@@ -445,7 +455,7 @@ class SiglipEncoderLayer(GradientCheckpointingLayer):
         self,
         hidden_states: torch.Tensor,
         attention_mask: torch.Tensor,
-        output_attentions: Optional[bool] = False,
+        output_attentions: bool | None = False,
     ) -> tuple[torch.FloatTensor]:
         """
         Args:
@@ -566,9 +576,9 @@ class SiglipEncoder(nn.Module):
     def forward(
         self,
         inputs_embeds,
-        attention_mask: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        attention_mask: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
     ) -> BaseModelOutput:
         r"""
         Args:
@@ -642,11 +652,11 @@ class SiglipTextTransformer(nn.Module):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
     ) -> BaseModelOutputWithPooling:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -713,11 +723,11 @@ class SiglipTextModel(SiglipPreTrainedModel):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
     ) -> BaseModelOutputWithPooling:
         r"""
         Examples:
@@ -763,9 +773,9 @@ class SiglipVisionTransformer(nn.Module):
     def forward(
         self,
         pixel_values,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        interpolate_pos_encoding: Optional[bool] = False,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        interpolate_pos_encoding: bool | None = False,
     ) -> BaseModelOutputWithPooling:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -845,8 +855,8 @@ class SiglipVisionModel(SiglipPreTrainedModel):
     def forward(
         self,
         pixel_values,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
     ) -> BaseModelOutputWithPooling:
         r"""
@@ -917,11 +927,11 @@ class SiglipModel(SiglipPreTrainedModel):
     @auto_docstring
     def get_text_features(
         self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        input_ids: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
     ) -> torch.FloatTensor:
         r"""
         Returns:
@@ -963,9 +973,9 @@ class SiglipModel(SiglipPreTrainedModel):
     @auto_docstring
     def get_image_features(
         self,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        pixel_values: torch.FloatTensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
     ) -> torch.FloatTensor:
         r"""
@@ -1013,13 +1023,13 @@ class SiglipModel(SiglipPreTrainedModel):
     @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        return_loss: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        input_ids: torch.LongTensor | None = None,
+        pixel_values: torch.FloatTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        return_loss: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
     ) -> SiglipOutput:
         r"""
@@ -1139,10 +1149,10 @@ class SiglipForImageClassification(SiglipPreTrainedModel):
     @auto_docstring
     def forward(
         self,
-        pixel_values: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+        pixel_values: torch.Tensor | None = None,
+        labels: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
         interpolate_pos_encoding: bool = False,
     ) -> ImageClassifierOutput:
         r"""
@@ -1229,9 +1239,9 @@ class SiglipForImageClassification(SiglipPreTrainedModel):
 
 
 __all__ = [
+    "SiglipForImageClassification",
     "SiglipModel",
     "SiglipPreTrainedModel",
     "SiglipTextModel",
     "SiglipVisionModel",
-    "SiglipForImageClassification",
 ]

@@ -4,7 +4,7 @@ import dataclasses
 import enum
 import logging
 import pathlib
-from typing import Generic, TypeVar, Union
+from typing import Generic, TypeVar
 
 import augmax
 from flax import nnx
@@ -17,7 +17,8 @@ import orbax.checkpoint as ocp
 import safetensors.torch
 import torch
 
-from tmrl_openpi.models_pytorch import pi0_pytorch, cspi0_pytorch
+from tmrl_openpi.models_pytorch import cspi0_pytorch
+from tmrl_openpi.models_pytorch import pi0_pytorch
 from tmrl_openpi.shared import image_tools
 import tmrl_openpi.shared.array_typing as at
 
@@ -101,14 +102,14 @@ class Observation(Generic[ArrayT]):
     # tokenized_prompt_mask: at.Bool[ArrayT, "*b l"] | None = None
 
     # Images, in [-1, 1] float32.
-    images: dict[str, Union[at.Float[ArrayT, "*b h w c"], at.Float[torch.Tensor, "*b h w c"]]]
+    images: dict[str, at.Float[ArrayT, "*b h w c"] | at.Float[torch.Tensor, "*b h w c"]]
     # Image masks
-    image_masks: dict[str, Union[at.Bool[ArrayT, "*b"], at.Bool[torch.Tensor, "*b"]]]
+    image_masks: dict[str, at.Bool[ArrayT, "*b"] | at.Bool[torch.Tensor, "*b"]]
     # Low-dimensional robot state
-    state: Union[at.Float[ArrayT, "*b s"], at.Real[torch.Tensor, "*b s"]]
+    state: at.Float[ArrayT, "*b s"] | at.Real[torch.Tensor, "*b s"]
     # Tokenized prompt
-    tokenized_prompt: Union[at.Int[ArrayT, "*b l"], at.Int[torch.Tensor, "*b l"], None] = None
-    tokenized_prompt_mask: Union[at.Bool[ArrayT, "*b l"], at.Bool[torch.Tensor, "*b l"], None] = None
+    tokenized_prompt: at.Int[ArrayT, "*b l"] | at.Int[torch.Tensor, "*b l"] | None = None
+    tokenized_prompt_mask: at.Bool[ArrayT, "*b l"] | at.Bool[torch.Tensor, "*b l"] | None = None
 
     # pi0-fast model specific fields.
     # Token auto-regressive mask (for FAST autoregressive model).
@@ -253,6 +254,7 @@ class BaseModelConfig(abc.ABC):
     def load_pytorch(self, train_config, weight_path: str):
         logger.info(f"train_config: {train_config}")
         from tmrl_openpi.models.cspi0 import CSPi0Config
+
         if isinstance(train_config.model, CSPi0Config):
             logger.info("Loading CSPi0Pytorch")
             model = cspi0_pytorch.CSPi0Pytorch(config=train_config.model)

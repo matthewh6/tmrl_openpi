@@ -79,6 +79,9 @@ def save_state(
         "train_state": train_state,
         "params": {"params": params},
     }
+    if step in checkpoint_manager.all_steps():
+        logging.info(f"Checkpoint for step {step} already exists, skipping save.")
+        return
     checkpoint_manager.save(step, items)
 
 

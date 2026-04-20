@@ -1,15 +1,11 @@
 import dataclasses
+from typing import Any
+
 import einops
 import numpy as np
-
-import flax.nnx as nnx
-import jax
-import jax.numpy as jnp
-from typing import Any
 from typing_extensions import override
 
 import tmrl_openpi.models.model as _model
-import tmrl_openpi.shared.array_typing as at
 import tmrl_openpi.transforms as transforms
 
 # Assumed action dimension for USC WidowX (6 joints + 1 gripper)

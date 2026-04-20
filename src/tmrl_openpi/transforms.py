@@ -5,13 +5,13 @@ from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
 
 import flax.traverse_util as traverse_util
 import jax
+import jax.numpy as jnp
 import numpy as np
 from openpi_client import image_tools
 
 from tmrl_openpi.models import tokenizer as _tokenizer
 from tmrl_openpi.shared import array_typing as at
 from tmrl_openpi.shared import normalize as _normalize
-import jax.numpy as jnp
 
 DataDict: TypeAlias = at.PyTree
 NormStats: TypeAlias = _normalize.NormStats
@@ -217,7 +217,7 @@ class DeltaActions(DataTransformFn):
         state, actions = data["state"], data["actions"]
         mask = np.asarray(self.mask)
         dims = mask.shape[-1]
-        actions = actions.copy() # avoid read-only error
+        actions = actions.copy()  # avoid read-only error
         actions[..., :dims] -= np.expand_dims(np.where(mask, state[..., :dims], 0), axis=-2)
         data["actions"] = actions
 
@@ -267,7 +267,7 @@ class TokenizePrompt(DataTransformFn):
             state = None
 
         if not isinstance(prompt, str):
-            if hasattr(prompt, '__len__') and len(prompt) >= 1:
+            if hasattr(prompt, "__len__") and len(prompt) >= 1:
                 prompt = str(prompt[0])
             else:
                 prompt = str(getattr(prompt, "item", lambda: prompt)())

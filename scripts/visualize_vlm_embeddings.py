@@ -50,8 +50,7 @@ def load_model(config_name: str, checkpoint_path: str | None):
         loader = weight_loaders.CheckpointWeightLoader(checkpoint_path)
         params_shape = nnx.state(model).to_pure_dict()
         loaded = loader.load(params_shape)
-        flat = {k: v for k, v in traverse_util.flatten_dict(loaded).items()
-                if not isinstance(v, jax.ShapeDtypeStruct)}
+        flat = {k: v for k, v in traverse_util.flatten_dict(loaded).items() if not isinstance(v, jax.ShapeDtypeStruct)}
         graphdef, state = nnx.split(model)
         state.replace_by_pure_dict(traverse_util.unflatten_dict(flat))
         model = nnx.merge(graphdef, state)
@@ -112,8 +111,9 @@ def make_label(t: float, alpha_bars: list) -> str:
     return f"t = {t:.2f}  (ᾱ = {ab:.4f})"
 
 
-def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
-              alpha_bars: list, output_path: str, *, normalize: bool = False):
+def visualize(
+    prefix_tokens: np.ndarray, prefix_mask: np.ndarray, alpha_bars: list, output_path: str, *, normalize: bool = False
+):
     """
     prefix_tokens : (B, S, D)
     prefix_mask   : (B, S)  boolean, True = valid token
@@ -132,9 +132,7 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
         noised_list.append(apply_noise(prefix_tokens, alpha_bars, float(t), sub))
 
     # Fit PCA on the union of all noise levels (valid tokens only)
-    all_valid = np.concatenate(
-        [n[prefix_mask].astype(np.float32) for n in noised_list], axis=0
-    )
+    all_valid = np.concatenate([n[prefix_mask].astype(np.float32) for n in noised_list], axis=0)
     pca = PCA(n_components=2)
     pca.fit(all_valid)
 
@@ -144,22 +142,22 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
 
     stats = []
     for noised in noised_list:
-        toks = valid_tokens(noised)                  # (N, D)
-        mean_vec = toks.mean(axis=0)                 # (D,)
+        toks = valid_tokens(noised)  # (N, D)
+        mean_vec = toks.mean(axis=0)  # (D,)
         mean_norm = float(np.linalg.norm(mean_vec))
         token_norms = np.linalg.norm(toks, axis=-1)  # (N,)
         mean_token_norm = float(token_norms.mean())
-        variance = float(toks.var())                 # scalar variance over all dims
+        variance = float(toks.var())  # scalar variance over all dims
         std_token_norm = float(token_norms.std())
-        stats.append(dict(mean_norm=mean_norm, mean_token_norm=mean_token_norm,
-                          variance=variance, std_token_norm=std_token_norm))
+        stats.append(
+            dict(mean_norm=mean_norm, mean_token_norm=mean_token_norm, variance=variance, std_token_norm=std_token_norm)
+        )
 
     sample_colors = plt.cm.tab10(np.linspace(0, 1, B))
     line_colors = plt.cm.viridis(np.linspace(0.1, 0.9, 4))
 
     fig = plt.figure(figsize=(22, 14))
-    gs = gridspec.GridSpec(3, 4, figure=fig, hspace=0.45, wspace=0.3,
-                           height_ratios=[1.2, 1, 1])
+    gs = gridspec.GridSpec(3, 4, figure=fig, hspace=0.45, wspace=0.3, height_ratios=[1.2, 1, 1])
 
     # ── Top row: PCA scatter per noise level ─────────────────────────────
     for col, (noised, t, st, lc) in enumerate(zip(noised_list, noise_fracs, stats, line_colors)):
@@ -167,17 +165,27 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
         for b in range(B):
             valid = prefix_mask[b]
             proj = pca.transform(noised[b][valid].astype(np.float32))
-            ax.scatter(proj[:, 0], proj[:, 1], s=8, alpha=0.55,
-                       color=sample_colors[b],
-                       label=f"obs {b}" if col == 0 else None)
+            ax.scatter(
+                proj[:, 0], proj[:, 1], s=8, alpha=0.55, color=sample_colors[b], label=f"obs {b}" if col == 0 else None
+            )
 
         # Annotate with mean and variance
-        info = (f"μ‖tok‖ = {st['mean_token_norm']:.3f}\n"
-                f"σ‖tok‖ = {st['std_token_norm']:.3f}\n"
-                f"var     = {st['variance']:.3f}")
-        ax.text(0.03, 0.97, info, transform=ax.transAxes, fontsize=7,
-                va="top", ha="left", family="monospace",
-                bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
+        info = (
+            f"μ‖tok‖ = {st['mean_token_norm']:.3f}\n"
+            f"σ‖tok‖ = {st['std_token_norm']:.3f}\n"
+            f"var     = {st['variance']:.3f}"
+        )
+        ax.text(
+            0.03,
+            0.97,
+            info,
+            transform=ax.transAxes,
+            fontsize=7,
+            va="top",
+            ha="left",
+            family="monospace",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
+        )
 
         ax.set_title(make_label(t, alpha_bars), fontsize=9)
         ax.set_xlabel("PC 1", fontsize=8)
@@ -187,9 +195,15 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
             ax.legend(fontsize=6, markerscale=2, loc="lower right")
 
     norm_tag = "RMS-normalized" if normalize else "raw"
-    fig.text(0.5, 0.97,
-             f"VLM Prefix Token Embeddings ({norm_tag}) — PCA at 4 Linspaced Noise Levels (CSPi0 Forward Process)",
-             ha="center", va="top", fontsize=13, fontweight="bold")
+    fig.text(
+        0.5,
+        0.97,
+        f"VLM Prefix Token Embeddings ({norm_tag}) — PCA at 4 Linspaced Noise Levels (CSPi0 Forward Process)",
+        ha="center",
+        va="top",
+        fontsize=13,
+        fontweight="bold",
+    )
 
     # ── Middle row: cosine similarity to clean ───────────────────────────
     ax_sim = fig.add_subplot(gs[1, :])
@@ -198,8 +212,8 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
 
     for noised, t, lc in zip(noised_list, noise_fracs, line_colors):
         dot = np.sum(clean_tokens * noised, axis=-1)
-        nc  = np.linalg.norm(clean_tokens, axis=-1)
-        nn  = np.linalg.norm(noised,       axis=-1)
+        nc = np.linalg.norm(clean_tokens, axis=-1)
+        nn = np.linalg.norm(noised, axis=-1)
         cos = dot / (nc * nn + 1e-8)
 
         avg = np.full(S, np.nan)
@@ -208,8 +222,7 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
             if valid_b.any():
                 avg[s] = cos[valid_b, s].mean()
 
-        ax_sim.plot(token_idx, avg, label=make_label(t, alpha_bars),
-                    color=lc, alpha=0.9, linewidth=1.5)
+        ax_sim.plot(token_idx, avg, label=make_label(t, alpha_bars), color=lc, alpha=0.9, linewidth=1.5)
 
     ax_sim.set_xlabel("Token position", fontsize=9)
     ax_sim.set_ylabel("Cosine similarity to clean", fontsize=9)
@@ -225,12 +238,19 @@ def visualize(prefix_tokens: np.ndarray, prefix_mask: np.ndarray,
     ax_var = fig.add_subplot(gs[2, 2:])
 
     mean_norms = [st["mean_token_norm"] for st in stats]
-    std_norms  = [st["std_token_norm"]  for st in stats]
-    variances  = [st["variance"]        for st in stats]
+    std_norms = [st["std_token_norm"] for st in stats]
+    variances = [st["variance"] for st in stats]
 
-    ax_mn.errorbar(noise_fracs, mean_norms, yerr=std_norms,
-                   marker="o", color="steelblue", linewidth=1.8,
-                   capsize=4, label="mean ± std of ‖token‖")
+    ax_mn.errorbar(
+        noise_fracs,
+        mean_norms,
+        yerr=std_norms,
+        marker="o",
+        color="steelblue",
+        linewidth=1.8,
+        capsize=4,
+        label="mean ± std of ‖token‖",
+    )
     ax_mn.set_xlabel("Noise level t", fontsize=9)
     ax_mn.set_ylabel("Token L2 norm", fontsize=9)
     ax_mn.set_title("Mean (±std) token L2 norm vs noise level", fontsize=10)
@@ -258,15 +278,13 @@ def _auto_output_path(base: str, normalize: bool) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_name", default="cspi05_droid",
-                        help="TrainConfig name (must use CSPi0Config).")
-    parser.add_argument("--checkpoint_path", default=None,
-                        help="Path to params checkpoint. Omit for random weights.")
+    parser.add_argument("--config_name", default="cspi05_droid", help="TrainConfig name (must use CSPi0Config).")
+    parser.add_argument("--checkpoint_path", default=None, help="Path to params checkpoint. Omit for random weights.")
     parser.add_argument("--output_path", default="vlm_embeddings.png")
-    parser.add_argument("--batch_size", type=int, default=8,
-                        help="Number of observations to embed.")
-    parser.add_argument("--normalize", action="store_true",
-                        help="Apply per-token RMS normalization before noise (matches CSPi0 model).")
+    parser.add_argument("--batch_size", type=int, default=8, help="Number of observations to embed.")
+    parser.add_argument(
+        "--normalize", action="store_true", help="Apply per-token RMS normalization before noise (matches CSPi0 model)."
+    )
     args = parser.parse_args()
 
     model, config = load_model(args.config_name, args.checkpoint_path)

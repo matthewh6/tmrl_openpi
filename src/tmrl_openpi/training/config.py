@@ -13,23 +13,22 @@ import flax.nnx as nnx
 from typing_extensions import override
 import tyro
 
+import tmrl_openpi.models.cspi0 as cspi0
 import tmrl_openpi.models.model as _model
 import tmrl_openpi.models.pi0 as pi0
-import tmrl_openpi.models.cspi0 as cspi0
 import tmrl_openpi.models.pi0_fast as pi0_fast
-import tmrl_openpi.shared.nnx_utils as nnx_utils
 import tmrl_openpi.models.tokenizer as _tokenizer
 import tmrl_openpi.policies.aloha_policy as aloha_policy
+import tmrl_openpi.policies.bridge_policy as bridge_policy
 import tmrl_openpi.policies.droid_policy as droid_policy
 import tmrl_openpi.policies.libero_policy as libero_policy
-import tmrl_openpi.policies.bridge_policy as bridge_policy
 import tmrl_openpi.shared.download as _download
+import tmrl_openpi.shared.nnx_utils as nnx_utils
 import tmrl_openpi.shared.normalize as _normalize
 import tmrl_openpi.training.droid_rlds_dataset as droid_rlds_dataset
 import tmrl_openpi.training.optimizer as _optimizer
 import tmrl_openpi.training.weight_loaders as weight_loaders
 import tmrl_openpi.transforms as _transforms
-
 
 ModelType: TypeAlias = _model.ModelType
 # Work around a tyro issue with using nnx.filterlib.Filter directly.
@@ -247,6 +246,7 @@ class SimpleDataConfig(DataConfigFactory):
             use_quantile_norm=model_config.model_type != ModelType.PI0 and model_config.model_type != ModelType.CSPi0,
         )
 
+
 @dataclasses.dataclass(frozen=True)
 class RLDSDroidDataConfig(DataConfigFactory):
     """
@@ -305,7 +305,6 @@ class RLDSDroidDataConfig(DataConfigFactory):
             action_space=self.action_space,
             filter_dict_path=self.filter_dict_path,
         )
-
 
 
 @dataclasses.dataclass(frozen=True)
@@ -719,7 +718,7 @@ _CONFIGS = [
         freeze_filter=nnx.Any(
             nnx_utils.PathRegex(".*img.*"),  # SigLIP vision encoder
             nnx.All(
-                nnx_utils.PathRegex(".*llm.*"),          # all LLM params
+                nnx_utils.PathRegex(".*llm.*"),  # all LLM params
                 nnx.Not(nnx_utils.PathRegex(".*_1.*")),  # ... except action expert (_1 suffix)
             ),
         ),
@@ -1192,7 +1191,7 @@ _CONFIGS = [
         model=pi0.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
         data=LeRobotLiberoDataConfig(
             repo_id="physical-intelligence/libero",
-            base_config=DataConfig(prompt_from_task=True),
+            base_config=DataConfig(prompt_from_task=True, local_files_only=True),
             extra_delta_transform=False,
         ),
         batch_size=256,
@@ -1210,10 +1209,10 @@ _CONFIGS = [
     TrainConfig(
         # Change the name to reflect your model and dataset.
         name="cspi05_libero",
-        model=cspi0.CSPi0Config(pi05=True),
+        model=cspi0.CSPi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
         data=LeRobotLiberoDataConfig(
             repo_id="physical-intelligence/libero",
-            base_config=DataConfig(prompt_from_task=True),
+            base_config=DataConfig(prompt_from_task=True, local_files_only=True),
             extra_delta_transform=False,
         ),
         batch_size=256,
@@ -1379,7 +1378,6 @@ _CONFIGS = [
         save_interval=250,
         keep_period=10000,
     ),
-
     # LoRA Fine-tuned WidowX from Bridge FT'd on pi0
     TrainConfig(
         name="cspi0_lora_widowx_from_bridge",
@@ -1429,8 +1427,6 @@ _CONFIGS = [
         save_interval=250,
         keep_period=10000,
     ),
-
-
     # TrainConfig(
     #     name="cspi05_lora_bridge_1_cam",
     #     model=cspi0.CSPi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),

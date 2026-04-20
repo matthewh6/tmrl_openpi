@@ -13,7 +13,7 @@ uv run examples/usc_widowx/convert_usc_data_to_lerobot.py --traj-paths /path/to/
 
 Example again for new widowx:
 python examples/usc_widowx/convert_uw_data_to_lerobot.py \
-    --save-dir /Volumes/Sandisk\ 1TB/masked_vla_data/ \
+    --save-dir /Volumes/Sandisk\\ 1TB/masked_vla_data/ \
     --repo-id "jesbu1/uw_widowx_8_8_lerobot" \
     --mode "video" \
     --push-to-hub \
@@ -21,7 +21,7 @@ python examples/usc_widowx/convert_uw_data_to_lerobot.py \
 
 
 python examples/usc_widowx/convert_uw_data_to_lerobot.py \
-    --save-dir /Volumes/Sandisk\ 1TB/8_11_masked_vla_widowx_data/ \
+    --save-dir /Volumes/Sandisk\\ 1TB/8_11_masked_vla_widowx_data/ \
     --repo-id "jesbu1/uw_widowx_8_11_lerobot" \
     --mode "video" \
     --push-to-hub \
@@ -36,12 +36,12 @@ python scripts/convert_uw_data_to_lerobot.py \
 """
 
 import dataclasses
-import re
 from pathlib import Path
-import shutil
-from typing import Literal, Dict, List, Tuple, Optional
-import warnings
 import pickle
+import re
+import shutil
+from typing import Literal
+import warnings
 
 try:
     # for older lerobot versions before 2.0.0
@@ -56,14 +56,14 @@ except ImportError:
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 import numpy as np
+from PIL import Image
 import torch
+import torchvision.transforms.functional as F
 import tqdm
 import tyro
-from PIL import Image
-import torchvision.transforms.functional as F
 
 
-def load_pickle_data(filepath: Path) -> Dict[str, np.ndarray]:
+def load_pickle_data(filepath: Path) -> dict[str, np.ndarray]:
     """Load data from a pickle file."""
     with open(filepath, "rb") as f:
         data = pickle.load(f)
@@ -101,16 +101,16 @@ class DatasetConfig:
     image_writer_threads: int = 8
     video_backend: str | None = None
     # TODO(user): Define image shape expected by LeRobot
-    image_height: int = 224 #256
-    image_width: int = 224 #256
+    image_height: int = 224  # 256
+    image_width: int = 224  # 256
 
 
 DEFAULT_DATASET_CONFIG = DatasetConfig()
 
 
-def get_trajectory_paths(save_dir: Path) -> List[Tuple[Path, str]]:
+def get_trajectory_paths(save_dir: Path) -> list[tuple[Path, str]]:
     """Find all trajectory directories within the list of raw data directories
-       and associate them with a task name derived from the parent directory."""
+    and associate them with a task name derived from the parent directory."""
     all_traj_infos = []
     for session_dir in (save_dir).iterdir():
         if not session_dir.is_dir():
@@ -119,7 +119,7 @@ def get_trajectory_paths(save_dir: Path) -> List[Tuple[Path, str]]:
 
         # Assuming the task name is the name of the directory containing traj folders
         task_name = session_dir.name
-        task_name_processed = task_name.replace("_", " ").capitalize() # Process for better readability
+        task_name_processed = task_name.replace("_", " ").capitalize()  # Process for better readability
         print(f"Processing task: {task_name_processed}")
 
         # Find trajectory folders (e.g., traj0, traj1, ...) within this raw_dir
@@ -127,13 +127,17 @@ def get_trajectory_paths(save_dir: Path) -> List[Tuple[Path, str]]:
         session_trajectory_dir = session_dir / "raw"
         traj_paths_in_dir = []
         for traj_group_dir in session_trajectory_dir.iterdir():
-            traj_paths_in_dir.extend([p for p in traj_group_dir.iterdir() if p.is_dir() and re.match(r"traj\d+", p.name)])
+            traj_paths_in_dir.extend(
+                [p for p in traj_group_dir.iterdir() if p.is_dir() and re.match(r"traj\d+", p.name)]
+            )
 
         if not traj_paths_in_dir:
             warnings.warn(f"No trajectory subdirectories found in {session_trajectory_dir}")
             continue
 
-        print(f"Found {len(traj_paths_in_dir)} potential trajectory directories in {session_trajectory_dir} for task '{task_name_processed}'.")
+        print(
+            f"Found {len(traj_paths_in_dir)} potential trajectory directories in {session_trajectory_dir} for task '{task_name_processed}'."
+        )
         for traj_path in traj_paths_in_dir:
             all_traj_infos.append((traj_path, task_name_processed))
 
@@ -163,7 +167,7 @@ def create_empty_dataset(
     ]
     cameras = [
         # "images0",
-        "image_0", # following bridge dataset convention
+        "image_0",  # following bridge dataset convention
         # "external",
         # "over_shoulder",
         # Add other camera names if present, e.g., "wrist"
@@ -204,7 +208,7 @@ def create_empty_dataset(
 
     return LeRobotDataset.create(
         repo_id=repo_id,
-        fps=10, # becuase the videos are just so slow
+        fps=10,  # becuase the videos are just so slow
         robot_type=robot_type,
         features=features,
         use_videos=dataset_config.use_videos,
@@ -217,9 +221,9 @@ def create_empty_dataset(
 
 def load_raw_episode_data(
     traj_path: Path,
-    cameras: List[str],
+    cameras: list[str],
     dataset_config: DatasetConfig,
-) -> Tuple[Dict[str, torch.Tensor], torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """Load state, action, and image data for a single trajectory."""
     obs_file = traj_path / "obs_dict.pkl"
     action_file = traj_path / "policy_out.pkl"
@@ -279,10 +283,9 @@ def load_raw_episode_data(
         resized_tensor = F.resize(
             imgs_tensor, size=[dataset_config.image_height, dataset_config.image_width], antialias=True
         )
-        
+
         # Store the processed tensor (N, C, H_out, W_out)
         imgs_per_cam[camera] = resized_tensor
-
 
         # Verify image count
         if camera in imgs_per_cam and imgs_per_cam[camera].shape[0] != num_frames:
@@ -300,23 +303,24 @@ def load_raw_episode_data(
     if not valid_cameras:
         # If no valid cameras remain (e.g., all had frame count mismatches), return None for images
         warnings.warn(f"No valid image data found for any camera in {traj_path}. Returning None for images.")
-        return None, state, action # Return state/action in case they are still useful without images
+        return None, state, action  # Return state/action in case they are still useful without images
 
     # Ensure all required cameras are present after validation
     missing_required = [cam for cam in cameras if cam not in valid_cameras]
     if missing_required:
-         warnings.warn(f"Required cameras {missing_required} missing valid data in {traj_path}. Returning None for images.")
-         return None, state, action
-
+        warnings.warn(
+            f"Required cameras {missing_required} missing valid data in {traj_path}. Returning None for images."
+        )
+        return None, state, action
 
     return imgs_per_cam, state, action
 
 
 def populate_dataset(
     dataset: LeRobotDataset,
-    traj_infos: List[Tuple[Path, str]], # List of (trajectory_path, task_name)
+    traj_infos: list[tuple[Path, str]],  # List of (trajectory_path, task_name)
     dataset_config: DatasetConfig,
-    episodes: Optional[List[int]] = None,
+    episodes: list[int] | None = None,
 ) -> LeRobotDataset:
     """Populate the LeRobotDataset with data from trajectory files."""
     if episodes is None:
@@ -325,9 +329,10 @@ def populate_dataset(
         selected_traj_infos = [traj_infos[i] for i in range(len(traj_infos))]
     else:
         if any(i >= len(traj_infos) for i in episodes):
-             raise IndexError(f"Episode index out of bounds. Requested indices {episodes}, but found {len(traj_infos)} total trajectories.")
+            raise IndexError(
+                f"Episode index out of bounds. Requested indices {episodes}, but found {len(traj_infos)} total trajectories."
+            )
         selected_traj_infos = [traj_infos[i] for i in episodes]
-
 
     # Get camera names from dataset features
     cameras = [key.split(".")[-1] for key in dataset.features if key.startswith("observation.images.")]
@@ -340,20 +345,19 @@ def populate_dataset(
             loaded_data = load_raw_episode_data(traj_path, cameras, dataset_config)
             # Check if image loading failed
             if loaded_data[0] is None:
-                 warnings.warn(f"Skipping trajectory {traj_path.name} due to missing/invalid image data.")
-                 continue
+                warnings.warn(f"Skipping trajectory {traj_path.name} due to missing/invalid image data.")
+                continue
             imgs_per_cam, state, action = loaded_data
 
         except FileNotFoundError as e:
             warnings.warn(f"Skipping trajectory {traj_path.name}: {e}")
             continue
         except TypeError as e:
-             warnings.warn(f"Skipping trajectory {traj_path.name} due to data type error: {e}")
-             continue
+            warnings.warn(f"Skipping trajectory {traj_path.name} due to data type error: {e}")
+            continue
         except Exception as e:
-             warnings.warn(f"Skipping trajectory {traj_path.name} due to unexpected error: {e}")
-             continue
-
+            warnings.warn(f"Skipping trajectory {traj_path.name} due to unexpected error: {e}")
+            continue
 
         num_frames = state.shape[0]
 
@@ -362,9 +366,10 @@ def populate_dataset(
             continue
         # Basic check (more robust checks happen in load_raw_episode_data)
         if not imgs_per_cam or cameras[0] not in imgs_per_cam or num_frames != len(imgs_per_cam[cameras[0]]):
-             warnings.warn(f"Frame count mismatch or missing camera data for {traj_path.name}. State: {num_frames}, Action: {action.shape[0]}, Images: {len(imgs_per_cam.get(cameras[0], []))}. Skipping.")
-             continue
-
+            warnings.warn(
+                f"Frame count mismatch or missing camera data for {traj_path.name}. State: {num_frames}, Action: {action.shape[0]}, Images: {len(imgs_per_cam.get(cameras[0], []))}. Skipping."
+            )
+            continue
 
         for i in range(num_frames):
             frame = {
@@ -386,7 +391,9 @@ def populate_dataset(
                 # Assign the CHW tensor directly
                 frame[f"observation.images.{camera}"] = img
 
-            assert all_cams_present, f"Camera {camera} missing image data for frame {i} in {traj_path.name}. Skipping frame."
+            assert (
+                all_cams_present
+            ), f"Camera {camera} missing image data for frame {i} in {traj_path.name}. Skipping frame."
 
             if not OLD_LEROBOT:
                 dataset.add_frame(frame, task=task)
@@ -408,10 +415,11 @@ def port_uw_data(
     repo_id: str,
     *,
     # Group for input specification
-    save_dir: Path, # Specify parent directory containing folders of each data collection sesion.
+    save_dir: Path,  # Specify parent directory containing folders of each data collection sesion.
     # Other arguments
-    raw_repo_id: Optional[str] = None, # Optional: HF repo to download raw data from if local paths don't exist (primarily for --raw-dirs)
-    episodes: Optional[List[int]] = None,
+    raw_repo_id: str
+    | None = None,  # Optional: HF repo to download raw data from if local paths don't exist (primarily for --raw-dirs)
+    episodes: list[int] | None = None,
     push_to_hub: bool = False,
     mode: Literal["video", "image"] = "video",
     dataset_config: DatasetConfig = DEFAULT_DATASET_CONFIG,
@@ -423,17 +431,16 @@ def port_uw_data(
         print(f"Dataset already exists locally at {LEROBOT_HOME / repo_id}. Removing.")
         shutil.rmtree(LEROBOT_HOME / repo_id)
 
-    traj_infos: List[Tuple[Path, str]] = []
+    traj_infos: list[tuple[Path, str]] = []
 
     if save_dir.exists():
         print("Processing using --save-dir mode.")
-
 
         # Warn if some directories were provided but don't exist
         traj_infos = get_trajectory_paths(save_dir)
 
     if not traj_infos:
-        print(f"No valid trajectories found based on the provided input. Exiting.")
+        print("No valid trajectories found based on the provided input. Exiting.")
         return
 
     dataset = create_empty_dataset(
@@ -443,9 +450,9 @@ def port_uw_data(
     )
     dataset = populate_dataset(
         dataset,
-        traj_infos, # Pass the list of (path, task) tuples
+        traj_infos,  # Pass the list of (path, task) tuples
         dataset_config=dataset_config,
-        episodes=episodes, # Note: episode indices apply to the *combined* list of trajectories found/provided
+        episodes=episodes,  # Note: episode indices apply to the *combined* list of trajectories found/provided
     )
 
     if dataset.num_episodes > 0:

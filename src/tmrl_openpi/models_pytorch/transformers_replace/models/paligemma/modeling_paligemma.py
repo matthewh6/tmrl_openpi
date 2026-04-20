@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2024 the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,22 +14,27 @@
 """PyTorch PaliGemmamodel."""
 
 from dataclasses import dataclass
-from typing import Optional, Union
 
 import torch
-import torch.utils.checkpoint
 from torch import nn
+import torch.utils.checkpoint
 
-from ...cache_utils import Cache, HybridCache, StaticCache
+from ...cache_utils import Cache
+from ...cache_utils import HybridCache
+from ...cache_utils import StaticCache
 from ...generation import GenerationMixin
 from ...modeling_flash_attention_utils import FlashAttentionKwargs
 from ...modeling_outputs import BaseModelOutputWithPast
 from ...modeling_utils import PreTrainedModel
 from ...processing_utils import Unpack
-from ...utils import LossKwargs, ModelOutput, auto_docstring, can_return_tuple, is_torchdynamo_compiling, logging
+from ...utils import LossKwargs
+from ...utils import ModelOutput
+from ...utils import auto_docstring
+from ...utils import can_return_tuple
+from ...utils import is_torchdynamo_compiling
+from ...utils import logging
 from ..auto import AutoModel
 from .configuration_paligemma import PaliGemmaConfig
-
 
 logger = logging.get_logger(__name__)
 
@@ -54,7 +58,7 @@ class PaligemmaModelOutputWithPast(BaseModelOutputWithPast):
         image_hidden_states of the model produced by the vision encoder and after projecting the last hidden state.
     """
 
-    image_hidden_states: Optional[torch.FloatTensor] = None
+    image_hidden_states: torch.FloatTensor | None = None
 
 
 @dataclass
@@ -80,12 +84,12 @@ class PaliGemmaCausalLMOutputWithPast(ModelOutput):
         image_hidden_states of the model produced by the vision encoder after projecting last hidden state.
     """
 
-    loss: Optional[torch.FloatTensor] = None
-    logits: Optional[torch.FloatTensor] = None
-    past_key_values: Optional[Union[list[torch.FloatTensor], Cache]] = None
-    hidden_states: Optional[tuple[torch.FloatTensor]] = None
-    attentions: Optional[tuple[torch.FloatTensor]] = None
-    image_hidden_states: Optional[torch.FloatTensor] = None
+    loss: torch.FloatTensor | None = None
+    logits: torch.FloatTensor | None = None
+    past_key_values: list[torch.FloatTensor] | Cache | None = None
+    hidden_states: tuple[torch.FloatTensor] | None = None
+    attentions: tuple[torch.FloatTensor] | None = None
+    image_hidden_states: torch.FloatTensor | None = None
 
 
 class PaliGemmaMultiModalProjector(nn.Module):
@@ -168,7 +172,7 @@ class PaliGemmaModel(PaliGemmaPreTrainedModel):
         past_key_values=None,
         cache_position=None,
         input_tensor=None,
-        is_training: Optional[bool] = None,
+        is_training: bool | None = None,
     ):
         if self.config.text_config._attn_implementation == "flash_attention_2":
             if attention_mask is not None and 0.0 in attention_mask:
@@ -181,9 +185,7 @@ class PaliGemmaModel(PaliGemmaPreTrainedModel):
             input_tensor = attention_mask
 
         inputs_lead_dim, sequence_length = input_tensor.shape[:2]
-        if using_static_cache:
-            target_length = past_key_values.get_max_cache_shape()
-        elif isinstance(past_key_values, HybridCache):
+        if using_static_cache or isinstance(past_key_values, HybridCache):
             target_length = past_key_values.get_max_cache_shape()
         else:
             target_length = (
@@ -223,9 +225,7 @@ class PaliGemmaModel(PaliGemmaPreTrainedModel):
             # Then apply padding mask (will mask pad tokens)
             padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].to(causal_mask.device)
             padding_mask = padding_mask == 0
-            causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
-                padding_mask, min_dtype
-            )
+            causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(padding_mask, min_dtype)
 
         return causal_mask
 
@@ -250,19 +250,19 @@ class PaliGemmaModel(PaliGemmaPreTrainedModel):
         self,
         input_ids: torch.LongTensor = None,
         pixel_values: torch.FloatTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[list[torch.FloatTensor], Cache]] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: list[torch.FloatTensor] | Cache | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
         **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> Union[tuple, PaligemmaModelOutputWithPast]:
+    ) -> tuple | PaligemmaModelOutputWithPast:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -432,20 +432,20 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
         self,
         input_ids: torch.LongTensor = None,
         pixel_values: torch.FloatTensor = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Union[list[torch.FloatTensor], Cache]] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        logits_to_keep: Union[int, torch.Tensor] = 0,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: list[torch.FloatTensor] | Cache | None = None,
+        token_type_ids: torch.LongTensor | None = None,
+        cache_position: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        labels: torch.LongTensor | None = None,
+        use_cache: bool | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+        logits_to_keep: int | torch.Tensor = 0,
         **kwargs: Unpack[KwargsForCausalLM],
-    ) -> Union[tuple, PaliGemmaCausalLMOutputWithPast]:
+    ) -> tuple | PaliGemmaCausalLMOutputWithPast:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -619,4 +619,4 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
         return causal_mask
 
 
-__all__ = ["PaliGemmaForConditionalGeneration", "PaliGemmaPreTrainedModel", "PaliGemmaModel"]
+__all__ = ["PaliGemmaForConditionalGeneration", "PaliGemmaModel", "PaliGemmaPreTrainedModel"]
