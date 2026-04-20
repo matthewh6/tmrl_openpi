@@ -579,13 +579,13 @@ class TrainConfig:
     data: DataConfigFactory = dataclasses.field(default_factory=FakeDataConfig)
 
     # Base directory for config assets (e.g., norm stats).
-    assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
-    # assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
+    # assets_base_dir: str = "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/assets"
+    assets_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/assets"
     # Base directory for checkpoints.
-    checkpoint_base_dir: str = (
-        "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
-    )
-    # checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    # checkpoint_base_dir: str = (
+    #     "/gpfs/scrubbed/hongmm/.cache/openpi/openpi-assets/checkpoints"
+    # )
+    checkpoint_base_dir: str = "/home/hongmm/.cache/openpi/openpi-assets/checkpoints"
 
     # Random seed that will be used by random generators during training.
     seed: int = 42
@@ -1116,16 +1116,26 @@ _CONFIGS = [
     TrainConfig(
         name="cspi05_droid",
         model=cspi0.CSPi0Config(action_horizon=15, pi05=True),
+        # data=SimpleDataConfig(
+        #     assets=AssetsConfig(asset_id="droid"),
+        #     data_transforms=lambda model: _transforms.Group(
+        #         inputs=[droid_policy.DroidInputs(model_type=ModelType.CSPi05)],
+        #         outputs=[droid_policy.DroidOutputs()],
+        #     ).push(
+        #         inputs=[_transforms.DeltaActions(_transforms.make_bool_mask(7, -1))],
+        #         outputs=[
+        #             _transforms.AbsoluteActions(_transforms.make_bool_mask(7, -1))
+        #         ],
+        #     ),
+        #     base_config=DataConfig(
+        #         prompt_from_task=True,
+        #     ),
+        # ),
         data=SimpleDataConfig(
             assets=AssetsConfig(asset_id="droid"),
             data_transforms=lambda model: _transforms.Group(
-                inputs=[droid_policy.DroidInputs(model_type=ModelType.CSPi05)],
+                inputs=[droid_policy.DroidInputs(model_type=ModelType.CSPi0)],
                 outputs=[droid_policy.DroidOutputs()],
-            ).push(
-                inputs=[_transforms.DeltaActions(_transforms.make_bool_mask(7, -1))],
-                outputs=[
-                    _transforms.AbsoluteActions(_transforms.make_bool_mask(7, -1))
-                ],
             ),
             base_config=DataConfig(
                 prompt_from_task=True,
@@ -1139,6 +1149,23 @@ _CONFIGS = [
             ),
         ),
     ),
+    # TrainConfig(
+    #     name="cspi05_droid",
+    #     # model=cspi0.CSPi0Config(
+    #     #     action_horizon=10,
+    #     # ),
+    #     model=cspi0.CSPi0Config(action_horizon=15, pi05=True),
+    #     data=SimpleDataConfig(
+    #         assets=AssetsConfig(asset_id="droid"),
+    #         data_transforms=lambda model: _transforms.Group(
+    #             inputs=[droid_policy.DroidInputs(model_type=ModelType.CSPi0)],
+    #             outputs=[droid_policy.DroidOutputs()],
+    #         ),
+    #         base_config=DataConfig(
+    #             prompt_from_task=True,
+    #         ),
+    #     ),
+    # ),
     #
     # Fine-tuning Libero configs.
     #

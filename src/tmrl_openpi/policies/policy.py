@@ -159,16 +159,15 @@ class Policy(BasePolicy):
             kw["time_prefix"] = self._to_backend(
                 self._normalize_time(tcont_context, bs, batched)
             )
-        if context_noise is not None:
-            arr = np.repeat(
-                self._to_np(context_noise)[:, None, :], 816, axis=1
-            )  # TODO: hardcoded prefix seq len
-            kw["noise_prefix"] = self._to_backend(arr)
-
         observation = _model.Observation.from_dict(inputs)
         t0 = time.monotonic()
 
         if self._is_pytorch_model:
+            if context_noise is not None:
+                arr = np.repeat(
+                    self._to_np(context_noise)[:, None, :], 816, axis=1
+                )  # TODO: hardcoded prefix seq len
+                kw["noise_prefix"] = self._to_backend(arr)
             actions = self._sample_actions(self._device, observation, **kw)
         else:
             self._rng, rng = jax.random.split(self._rng)
