@@ -31,9 +31,7 @@ class Args:
     #################################################################################################################
     # LIBERO environment-specific parameters
     #################################################################################################################
-    task_suite_name: str = (
-        "libero_spatial"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
-    )
+    task_suite_name: str = "libero_spatial"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
 
@@ -113,12 +111,18 @@ def eval_libero(args: Args) -> None:
                     # Get preprocessed image
                     # IMPORTANT: rotate 180 degrees to match train preprocessing
                     img = np.ascontiguousarray(obs["agentview_image"][::-1, ::-1])
-                    wrist_img = np.ascontiguousarray(obs["robot0_eye_in_hand_image"][::-1, ::-1])
+                    wrist_img = np.ascontiguousarray(
+                        obs["robot0_eye_in_hand_image"][::-1, ::-1]
+                    )
                     img = image_tools.convert_to_uint8(
-                        image_tools.resize_with_pad(img, args.resize_size, args.resize_size)
+                        image_tools.resize_with_pad(
+                            img, args.resize_size, args.resize_size
+                        )
                     )
                     wrist_img = image_tools.convert_to_uint8(
-                        image_tools.resize_with_pad(wrist_img, args.resize_size, args.resize_size)
+                        image_tools.resize_with_pad(
+                            wrist_img, args.resize_size, args.resize_size
+                        )
                     )
 
                     # Save preprocessed image for replay video
@@ -142,9 +146,9 @@ def eval_libero(args: Args) -> None:
 
                         # Query model to get action
                         action_chunk = client.infer(element)["actions"]
-                        assert len(action_chunk) >= args.replan_steps, (
-                            f"We want to replan every {args.replan_steps} steps, but policy only predicts {len(action_chunk)} steps."
-                        )
+                        assert (
+                            len(action_chunk) >= args.replan_steps
+                        ), f"We want to replan every {args.replan_steps} steps, but policy only predicts {len(action_chunk)} steps."
                         action_plan.extend(action_chunk[: args.replan_steps])
 
                     action = action_plan.popleft()
@@ -168,7 +172,8 @@ def eval_libero(args: Args) -> None:
             suffix = "success" if done else "failure"
             task_segment = task_description.replace(" ", "_")
             imageio.mimwrite(
-                pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_{suffix}.mp4",
+                pathlib.Path(args.video_out_path)
+                / f"rollout_{task_segment}_{suffix}.mp4",
                 [np.asarray(x) for x in replay_images],
                 fps=10,
             )
@@ -176,23 +181,41 @@ def eval_libero(args: Args) -> None:
             # Log current results
             logging.info(f"Success: {done}")
             logging.info(f"# episodes completed so far: {total_episodes}")
-            logging.info(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
+            logging.info(
+                f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)"
+            )
 
         # Log final results
-        logging.info(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
-        logging.info(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
+        logging.info(
+            f"Current task success rate: {float(task_successes) / float(task_episodes)}"
+        )
+        logging.info(
+            f"Current total success rate: {float(total_successes) / float(total_episodes)}"
+        )
 
-    logging.info(f"Total success rate: {float(total_successes) / float(total_episodes)}")
+    logging.info(
+        f"Total success rate: {float(total_successes) / float(total_episodes)}"
+    )
     logging.info(f"Total episodes: {total_episodes}")
 
 
 def _get_libero_env(task, resolution, seed):
     """Initializes and returns the LIBERO environment, along with the task description."""
     task_description = task.language
-    task_bddl_file = pathlib.Path(get_libero_path("bddl_files")) / task.problem_folder / task.bddl_file
-    env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
+    task_bddl_file = (
+        pathlib.Path(get_libero_path("bddl_files"))
+        / task.problem_folder
+        / task.bddl_file
+    )
+    env_args = {
+        "bddl_file_name": task_bddl_file,
+        "camera_heights": resolution,
+        "camera_widths": resolution,
+    }
     env = OffScreenRenderEnv(**env_args)
-    env.seed(seed)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
+    env.seed(
+        seed
+    )  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
     return env, task_description
 
 

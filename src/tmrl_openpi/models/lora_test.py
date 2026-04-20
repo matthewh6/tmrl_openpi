@@ -34,7 +34,9 @@ def test_lora_einsum_params_shape():
 def test_lora_einsum_same_output():
     shape = (3, 8, 32, 4)  # (3KDH)
     einsum = lora.Einsum(shape)
-    einsum_lora = lora.Einsum(shape, lora_config=lora.LoRAConfig(rank=2, init_fn=nn.initializers.zeros))
+    einsum_lora = lora.Einsum(
+        shape, lora_config=lora.LoRAConfig(rank=2, init_fn=nn.initializers.zeros)
+    )
 
     key = jax.random.key(0)
     x = jax.random.normal(key, (8, 64, 32))  # (BSD)

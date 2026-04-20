@@ -14,7 +14,11 @@ import tmrl_openpi.training.utils as training_utils
 
 
 def initialize_checkpoint_dir(
-    checkpoint_dir: epath.Path | str, *, keep_period: int | None, overwrite: bool, resume: bool
+    checkpoint_dir: epath.Path | str,
+    *,
+    keep_period: int | None,
+    overwrite: bool,
+    resume: bool,
 ) -> tuple[ocp.CheckpointManager, bool]:
     checkpoint_dir = epath.Path(checkpoint_dir).resolve()
     resuming = False
@@ -52,7 +56,9 @@ def initialize_checkpoint_dir(
     # not get to the first checkpoint saved. In this case, we don't actually want the train script to try and restore a
     # checkpoint, since it will fail.
     if resuming and tuple(mngr.all_steps()) in [(), (0,)]:
-        logging.info("Checkpoint directory exists, but does not contain any checkpoints. Aborting resume.")
+        logging.info(
+            "Checkpoint directory exists, but does not contain any checkpoints. Aborting resume."
+        )
         resuming = False
 
     return mngr, resuming
@@ -106,7 +112,9 @@ def restore_state(
     return _merge_params(restored["train_state"], restored["params"])
 
 
-def load_norm_stats(assets_dir: epath.Path | str, asset_id: str) -> dict[str, _normalize.NormStats] | None:
+def load_norm_stats(
+    assets_dir: epath.Path | str, asset_id: str
+) -> dict[str, _normalize.NormStats] | None:
     norm_stats_dir = epath.Path(assets_dir) / asset_id
     norm_stats = _normalize.load(norm_stats_dir)
     logging.info(f"Loaded norm stats from {norm_stats_dir}")
@@ -130,7 +138,9 @@ class CallbackHandler(ocp.AsyncCheckpointHandler):
         if jax.process_index() == 0:
             args.callback(directory)
 
-    async def async_save(self, directory: epath.Path, args: "CallbackSave") -> list[futures.Future]:
+    async def async_save(
+        self, directory: epath.Path, args: "CallbackSave"
+    ) -> list[futures.Future]:
         return [self._executor.submit(self.save, directory, args)]
 
     def restore(self, *args, **kwargs):
@@ -147,7 +157,9 @@ class CallbackSave(ocp.args.CheckpointArgs):
 class CallbackRestore(ocp.args.CheckpointArgs): ...
 
 
-def _split_params(state: training_utils.TrainState) -> tuple[training_utils.TrainState, at.Params]:
+def _split_params(
+    state: training_utils.TrainState,
+) -> tuple[training_utils.TrainState, at.Params]:
     if state.ema_params is not None:
         params = state.ema_params
         train_state = dataclasses.replace(state, ema_params=None)
@@ -157,7 +169,9 @@ def _split_params(state: training_utils.TrainState) -> tuple[training_utils.Trai
     return train_state, params
 
 
-def _merge_params(train_state: training_utils.TrainState, params: dict[str, at.Params]) -> training_utils.TrainState:
+def _merge_params(
+    train_state: training_utils.TrainState, params: dict[str, at.Params]
+) -> training_utils.TrainState:
     # Revert the logic inside `_split_params`. Assumes that existence of `params` means that EMA params were used during the split.
     if train_state.params:
         return dataclasses.replace(train_state, ema_params=params["params"])

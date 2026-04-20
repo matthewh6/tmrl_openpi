@@ -51,8 +51,12 @@ class WebsocketPolicyServer:
         while True:
             try:
                 message = msgpack_numpy.unpackb(await websocket.recv())
-                method = message.get("method", "infer")  # default to infer for backward compatibility
-                obs = message.get("obs", message)  # if no method specified, assume old format
+                method = message.get(
+                    "method", "infer"
+                )  # default to infer for backward compatibility
+                obs = message.get(
+                    "obs", message
+                )  # if no method specified, assume old format
 
                 if method == "infer":
                     noise = obs.pop("noise", None)
@@ -62,7 +66,9 @@ class WebsocketPolicyServer:
                 else:
                     raise ValueError(f"Unknown method: {method}")
                 # convert result to numpy array
-                result = jax.tree.map(lambda x: np.asarray(x).astype(np.float32), result)
+                result = jax.tree.map(
+                    lambda x: np.asarray(x).astype(np.float32), result
+                )
                 await websocket.send(packer.pack(result))
             except websockets.ConnectionClosed:
                 logging.info(f"Connection from {websocket.remote_address} closed")

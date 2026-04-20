@@ -32,14 +32,18 @@ class DataLoader(Protocol[T_co]):
 
     def data_config(self) -> _config.DataConfig:
         """Get the data config for this data loader."""
-        raise NotImplementedError("Subclasses of DataLoader should implement data_config.")
+        raise NotImplementedError(
+            "Subclasses of DataLoader should implement data_config."
+        )
 
     def __iter__(self) -> Iterator[T_co]:
         raise NotImplementedError("Subclasses of DataLoader should implement __iter__.")
 
 
 class TransformedDataset(Dataset[T_co]):
-    def __init__(self, dataset: Dataset, transforms: Sequence[_transforms.DataTransformFn]):
+    def __init__(
+        self, dataset: Dataset, transforms: Sequence[_transforms.DataTransformFn]
+    ):
         self._dataset = dataset
         self._transform = _transforms.compose(transforms)
 
@@ -64,7 +68,9 @@ class FakeDataset(Dataset):
             # Remove the batch dimension.
             shape = spec.shape[1:]
             if spec.dtype == jnp.float32:
-                return jax.random.uniform(data_rng, shape=shape, minval=-1.0, maxval=1.0)
+                return jax.random.uniform(
+                    data_rng, shape=shape, minval=-1.0, maxval=1.0
+                )
             if spec.dtype == jnp.int32:
                 return jax.random.randint(data_rng, shape=shape, minval=0, maxval=2048)
             return jnp.zeros(shape=shape, dtype=spec.dtype)
@@ -81,7 +87,9 @@ class FakeDataset(Dataset):
         return self._num_samples
 
 
-def create_dataset(data_config: _config.DataConfig, model_config: _model.BaseModelConfig) -> Dataset:
+def create_dataset(
+    data_config: _config.DataConfig, model_config: _model.BaseModelConfig
+) -> Dataset:
     """Create a dataset for training."""
     repo_id = data_config.repo_id
     if repo_id is None:
@@ -99,12 +107,16 @@ def create_dataset(data_config: _config.DataConfig, model_config: _model.BaseMod
     )
 
     if data_config.prompt_from_task:
-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+        dataset = TransformedDataset(
+            dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)]
+        )
 
     return dataset
 
 
-def transform_dataset(dataset: Dataset, data_config: _config.DataConfig, *, skip_norm_stats: bool = False) -> Dataset:
+def transform_dataset(
+    dataset: Dataset, data_config: _config.DataConfig, *, skip_norm_stats: bool = False
+) -> Dataset:
     """Transform the dataset by applying the data transforms."""
     norm_stats = {}
     if data_config.repo_id != "fake" and not skip_norm_stats:
@@ -120,7 +132,9 @@ def transform_dataset(dataset: Dataset, data_config: _config.DataConfig, *, skip
         [
             *data_config.repack_transforms.inputs,
             *data_config.data_transforms.inputs,
-            _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
+            _transforms.Normalize(
+                norm_stats, use_quantiles=data_config.use_quantile_norm
+            ),
             *data_config.model_transforms.inputs,
         ],
     )
@@ -176,7 +190,9 @@ def create_data_loader(
     )
 
     class DataLoaderImpl(DataLoader):
-        def __init__(self, data_config: _config.DataConfig, data_loader: TorchDataLoader):
+        def __init__(
+            self, data_config: _config.DataConfig, data_loader: TorchDataLoader
+        ):
             self._data_config = data_config
             self._data_loader = data_loader
 
@@ -221,7 +237,9 @@ def _create_rlds_data_loader(
         [
             *data_config.repack_transforms.inputs,
             *data_config.data_transforms.inputs,
-            _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
+            _transforms.Normalize(
+                norm_stats, use_quantiles=data_config.use_quantile_norm
+            ),
             *data_config.model_transforms.inputs,
         ]
     )
@@ -301,10 +319,14 @@ class TorchDataLoader:
             seed: The seed to use for shuffling the data.
         """
         if jax.process_count() > 1:
-            raise NotImplementedError("Data loading with multiple processes is not supported.")
+            raise NotImplementedError(
+                "Data loading with multiple processes is not supported."
+            )
 
         if len(dataset) < local_batch_size:
-            raise ValueError(f"Local batch size ({local_batch_size}) is larger than the dataset size ({len(dataset)}).")
+            raise ValueError(
+                f"Local batch size ({local_batch_size}) is larger than the dataset size ({len(dataset)})."
+            )
 
         if sharding is None:
             # Use data parallel sharding by default.
@@ -351,7 +373,10 @@ class TorchDataLoader:
                 except StopIteration:
                     break  # We've exhausted the dataset. Create a new iterator and start over.
                 num_items += 1
-                yield jax.tree.map(lambda x: jax.make_array_from_process_local_data(self._sharding, x), batch)
+                yield jax.tree.map(
+                    lambda x: jax.make_array_from_process_local_data(self._sharding, x),
+                    batch,
+                )
 
 
 def _collate_fn(items):

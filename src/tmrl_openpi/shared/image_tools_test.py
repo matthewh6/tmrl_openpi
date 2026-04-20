@@ -5,7 +5,9 @@ from tmrl_openpi.shared import image_tools
 
 def test_resize_with_pad_shapes():
     # Test case 1: Resize image with larger dimensions
-    images = jnp.zeros((2, 10, 10, 3), dtype=jnp.uint8)  # Input images of shape (batch_size, height, width, channels)
+    images = jnp.zeros(
+        (2, 10, 10, 3), dtype=jnp.uint8
+    )  # Input images of shape (batch_size, height, width, channels)
     height = 20
     width = 20
     resized_images = image_tools.resize_with_pad(images, height, width)

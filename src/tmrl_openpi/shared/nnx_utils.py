@@ -26,7 +26,9 @@ def module_jit(meth: Callable[P, R], *jit_args, **jit_kwargs) -> Callable[P, R]:
     after the method call completes.
     """
     if not (inspect.ismethod(meth) and isinstance(meth.__self__, nnx.Module)):
-        raise ValueError("module_jit must only be used on bound methods of nnx.Modules.")
+        raise ValueError(
+            "module_jit must only be used on bound methods of nnx.Modules."
+        )
 
     graphdef, state = nnx.split(meth.__self__)
 
@@ -63,7 +65,9 @@ class PathRegex:
         return self.pattern.fullmatch(joined_path) is not None
 
 
-def state_map(state: nnx.State, filter: nnx.filterlib.Filter, fn: Callable[[Any], Any]) -> nnx.State:
+def state_map(
+    state: nnx.State, filter: nnx.filterlib.Filter, fn: Callable[[Any], Any]
+) -> nnx.State:
     """Apply a function to the leaves of the state that match the filter."""
     filtered_keys = set(state.filter(filter).flat_state())
     return state.map(lambda k, v: fn(v) if k in filtered_keys else v)

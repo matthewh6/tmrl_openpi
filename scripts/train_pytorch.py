@@ -49,7 +49,13 @@ import tmrl_openpi.training.data_loader as _data
 
 
 def init_logging():
-    level_mapping = {"DEBUG": "D", "INFO": "I", "WARNING": "W", "ERROR": "E", "CRITICAL": "C"}
+    level_mapping = {
+        "DEBUG": "D",
+        "INFO": "I",
+        "WARNING": "W",
+        "ERROR": "E",
+        "CRITICAL": "C",
+    }
 
     class CustomFormatter(logging.Formatter):
         def format(self, record):
@@ -150,7 +156,9 @@ def save_checkpoint(model, optimizer, global_step, config, is_main, data_config)
     if not is_main:
         return
 
-    if (global_step % config.save_interval == 0 and global_step > 0) or global_step == config.num_train_steps - 1:
+    if (
+        global_step % config.save_interval == 0 and global_step > 0
+    ) or global_step == config.num_train_steps - 1:
         final_ckpt_dir = config.checkpoint_dir / f"{global_step}"
         tmp_ckpt_dir = config.checkpoint_dir / f"tmp_{global_step}"
 
@@ -158,7 +166,11 @@ def save_checkpoint(model, optimizer, global_step, config, is_main, data_config)
             shutil.rmtree(tmp_ckpt_dir)
         tmp_ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-        model_to_save = model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
+        model_to_save = (
+            model.module
+            if isinstance(model, torch.nn.parallel.DistributedDataParallel)
+            else model
+        )
         safetensors.torch.save_model(model_to_save, tmp_ckpt_dir / "model.safetensors")
 
         torch.save(optimizer.state_dict(), tmp_ckpt_dir / "optimizer.pt")
@@ -208,8 +220,14 @@ def load_checkpoint(model, optimizer, checkpoint_dir, device):
         safetensors_path = ckpt_dir / "model.safetensors"
 
         if safetensors_path.exists():
-            model_to_load = model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
-            safetensors.torch.load_model(model_to_load, safetensors_path, device=str(device))
+            model_to_load = (
+                model.module
+                if isinstance(model, torch.nn.parallel.DistributedDataParallel)
+                else model
+            )
+            safetensors.torch.load_model(
+                model_to_load, safetensors_path, device=str(device)
+            )
             logging.info("Loaded model state from safetensors format")
         else:
             raise FileNotFoundError(f"No model checkpoint found at {ckpt_dir}")
@@ -222,7 +240,9 @@ def load_checkpoint(model, optimizer, checkpoint_dir, device):
         optimizer_path = ckpt_dir / "optimizer.pt"
 
         if optimizer_path.exists():
-            optimizer_state_dict = torch.load(optimizer_path, map_location=device, weights_only=False)
+            optimizer_state_dict = torch.load(
+                optimizer_path, map_location=device, weights_only=False
+            )
             logging.info("Loaded optimizer state from pt format")
         else:
             raise FileNotFoundError(f"No optimizer checkpoint found at {ckpt_dir}")
@@ -234,14 +254,18 @@ def load_checkpoint(model, optimizer, checkpoint_dir, device):
         log_memory_usage(device, latest_step, "after_loading_optimizer")
 
         logging.info("Loading metadata...")
-        metadata = torch.load(ckpt_dir / "metadata.pt", map_location=device, weights_only=False)
+        metadata = torch.load(
+            ckpt_dir / "metadata.pt", map_location=device, weights_only=False
+        )
         global_step = metadata.get("global_step", latest_step)
         del metadata
         torch.cuda.empty_cache()
         gc.collect()
         log_memory_usage(device, latest_step, "after_loading_metadata")
 
-        logging.info(f"Successfully loaded all checkpoint components from step {latest_step}")
+        logging.info(
+            f"Successfully loaded all checkpoint components from step {latest_step}"
+        )
         return global_step
 
     except RuntimeError as e:
@@ -273,7 +297,9 @@ def log_memory_usage(device, step, phase="unknown"):
 
     memory_allocated = torch.cuda.memory_allocated(device) / 1e9
     memory_reserved = torch.cuda.memory_reserved(device) / 1e9
-    memory_free = torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(device)
+    memory_free = torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(
+        device
+    )
     memory_free = memory_free / 1e9
 
     memory_stats = torch.cuda.memory_stats(device)
@@ -306,9 +332,13 @@ def train_loop(config: _config.TrainConfig):
                     f"Resuming from experiment checkpoint directory: {exp_checkpoint_dir} at step {latest_step}"
                 )
             else:
-                raise FileNotFoundError(f"No valid checkpoints found in {exp_checkpoint_dir} for resume")
+                raise FileNotFoundError(
+                    f"No valid checkpoints found in {exp_checkpoint_dir} for resume"
+                )
         else:
-            raise FileNotFoundError(f"Experiment checkpoint directory {exp_checkpoint_dir} does not exist for resume")
+            raise FileNotFoundError(
+                f"Experiment checkpoint directory {exp_checkpoint_dir} does not exist for resume"
+            )
     elif config.overwrite and config.checkpoint_dir.exists():
         shutil.rmtree(config.checkpoint_dir)
         logging.info(f"Overwriting checkpoint directory: {config.checkpoint_dir}")
@@ -318,7 +348,9 @@ def train_loop(config: _config.TrainConfig):
         exp_checkpoint_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Created experiment checkpoint directory: {exp_checkpoint_dir}")
     else:
-        logging.info(f"Using existing experiment checkpoint directory: {config.checkpoint_dir}")
+        logging.info(
+            f"Using existing experiment checkpoint directory: {config.checkpoint_dir}"
+        )
 
     if is_main:
         init_wandb(config, resuming=resuming, enabled=config.wandb_enabled)
@@ -333,7 +365,9 @@ def train_loop(config: _config.TrainConfig):
 
     # Log sample images to wandb on first batch
     if is_main and config.wandb_enabled and not resuming:
-        sample_data_loader = _data.create_data_loader(config, framework="pytorch", shuffle=False)
+        sample_data_loader = _data.create_data_loader(
+            config, framework="pytorch", shuffle=False
+        )
         sample_batch = next(iter(sample_data_loader))
         observation, actions = sample_batch
         sample_batch = observation.to_dict()
@@ -342,7 +376,10 @@ def train_loop(config: _config.TrainConfig):
         images_to_log = []
         batch_size = next(iter(sample_batch["image"].values())).shape[0]
         for i in range(min(5, batch_size)):
-            img_concatenated = torch.cat([img[i].permute(1, 2, 0) for img in sample_batch["image"].values()], axis=1)
+            img_concatenated = torch.cat(
+                [img[i].permute(1, 2, 0) for img in sample_batch["image"].values()],
+                axis=1,
+            )
             img_concatenated = img_concatenated.cpu().numpy()
             images_to_log.append(wandb.Image(img_concatenated))
 
@@ -363,7 +400,9 @@ def train_loop(config: _config.TrainConfig):
             action_horizon=config.model.action_horizon,
             max_token_len=config.model.max_token_len,
             paligemma_variant=getattr(config.model, "paligemma_variant", "gemma_2b"),
-            action_expert_variant=getattr(config.model, "action_expert_variant", "gemma_300m"),
+            action_expert_variant=getattr(
+                config.model, "action_expert_variant", "gemma_300m"
+            ),
             pi05=getattr(config.model, "pi05", False),
         )
     else:
@@ -372,7 +411,9 @@ def train_loop(config: _config.TrainConfig):
 
     if config.name.startswith("cspi0"):
         logging.info("Building CSPi0Pytorch model")
-        model = tmrl_openpi.models_pytorch.cspi0_pytorch.CSPi0Pytorch(model_cfg).to(device)
+        model = tmrl_openpi.models_pytorch.cspi0_pytorch.CSPi0Pytorch(model_cfg).to(
+            device
+        )
     else:
         logging.info("Building PI0Pytorch model")
         model = tmrl_openpi.models_pytorch.pi0_pytorch.PI0Pytorch(model_cfg).to(device)
@@ -392,7 +433,9 @@ def train_loop(config: _config.TrainConfig):
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+            "max_split_size_mb:128,expandable_segments:True"
+        )
         logging.info("Enabled memory optimizations for 8+ GPU training")
 
     if use_ddp:
@@ -408,7 +451,11 @@ def train_loop(config: _config.TrainConfig):
     if config.pytorch_weight_path is not None:
         logging.info(f"Loading weights from: {config.pytorch_weight_path}")
         model_path = os.path.join(config.pytorch_weight_path, "model.safetensors")
-        model_to_load = model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
+        model_to_load = (
+            model.module
+            if isinstance(model, torch.nn.parallel.DistributedDataParallel)
+            else model
+        )
         safetensors.torch.load_model(model_to_load, model_path, strict=False)
         logging.info(f"Loaded PyTorch weights from {config.pytorch_weight_path}")
 
@@ -432,13 +479,23 @@ def train_loop(config: _config.TrainConfig):
         "time_mlp_in.",
         "time_mlp_out.",
     )
-    raw_model_for_freeze = model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
-    if isinstance(raw_model_for_freeze, tmrl_openpi.models_pytorch.cspi0_pytorch.CSPi0Pytorch):
+    raw_model_for_freeze = (
+        model.module
+        if isinstance(model, torch.nn.parallel.DistributedDataParallel)
+        else model
+    )
+    if isinstance(
+        raw_model_for_freeze, tmrl_openpi.models_pytorch.cspi0_pytorch.CSPi0Pytorch
+    ):
         for name, param in raw_model_for_freeze.named_parameters():
             is_trainable = any(name.startswith(pfx) for pfx in _ACTION_EXPERT_PREFIXES)
             param.requires_grad_(is_trainable)
-        trainable_params = sum(p.numel() for p in raw_model_for_freeze.parameters() if p.requires_grad)
-        frozen_params = sum(p.numel() for p in raw_model_for_freeze.parameters() if not p.requires_grad)
+        trainable_params = sum(
+            p.numel() for p in raw_model_for_freeze.parameters() if p.requires_grad
+        )
+        frozen_params = sum(
+            p.numel() for p in raw_model_for_freeze.parameters() if not p.requires_grad
+        )
         logging.info(
             f"CSPi0 VLM freeze: trainable={trainable_params / 1e6:.1f}M params, "
             f"frozen={frozen_params / 1e6:.1f}M params"
@@ -477,7 +534,9 @@ def train_loop(config: _config.TrainConfig):
         logging.info(
             f"Training config: batch_size={config.batch_size}, effective_batch_size={effective_batch_size}, num_train_steps={config.num_train_steps}"
         )
-        logging.info(f"Memory optimizations: gradient_checkpointing={enable_gradient_checkpointing}")
+        logging.info(
+            f"Memory optimizations: gradient_checkpointing={enable_gradient_checkpointing}"
+        )
         logging.info(
             f"LR schedule: warmup={warmup_steps}, peak_lr={peak_lr:.2e}, decay_steps={decay_steps}, end_lr={end_lr:.2e}"
         )
@@ -488,7 +547,12 @@ def train_loop(config: _config.TrainConfig):
         logging.info(f"Training precision: {model_cfg.dtype}")
 
     pbar = (
-        tqdm.tqdm(total=config.num_train_steps, initial=global_step, desc="Training", disable=not is_main)
+        tqdm.tqdm(
+            total=config.num_train_steps,
+            initial=global_step,
+            desc="Training",
+            disable=not is_main,
+        )
         if is_main
         else None
     )
@@ -540,7 +604,9 @@ def train_loop(config: _config.TrainConfig):
                     {
                         "loss": loss.item(),
                         "learning_rate": optim.param_groups[0]["lr"],
-                        "grad_norm": float(grad_norm) if isinstance(grad_norm, torch.Tensor) else grad_norm,
+                        "grad_norm": float(grad_norm)
+                        if isinstance(grad_norm, torch.Tensor)
+                        else grad_norm,
                     }
                 )
 
@@ -553,7 +619,9 @@ def train_loop(config: _config.TrainConfig):
                 avg_grad_norm = None
                 if any("grad_norm" in info for info in infos):
                     vals = [
-                        info["grad_norm"] for info in infos if "grad_norm" in info and info["grad_norm"] is not None
+                        info["grad_norm"]
+                        for info in infos
+                        if "grad_norm" in info and info["grad_norm"] is not None
                     ]
                     if len(vals) > 0:
                         avg_grad_norm = sum(vals) / len(vals)
@@ -583,7 +651,11 @@ def train_loop(config: _config.TrainConfig):
             if pbar is not None:
                 pbar.update(1)
                 pbar.set_postfix(
-                    {"loss": f"{loss.item():.4f}", "lr": f"{optim.param_groups[0]['lr']:.2e}", "step": global_step}
+                    {
+                        "loss": f"{loss.item():.4f}",
+                        "lr": f"{optim.param_groups[0]['lr']:.2e}",
+                        "step": global_step,
+                    }
                 )
 
     if pbar is not None:

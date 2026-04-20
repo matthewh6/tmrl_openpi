@@ -10,8 +10,12 @@ from tmrl_openpi.models import model as _model
 def make_droid_example() -> dict:
     """Creates a random input example for the Droid policy."""
     return {
-        "observation/exterior_image_1_left": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
-        "observation/wrist_image_left": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
+        "observation/exterior_image_1_left": np.random.randint(
+            256, size=(224, 224, 3), dtype=np.uint8
+        ),
+        "observation/wrist_image_left": np.random.randint(
+            256, size=(224, 224, 3), dtype=np.uint8
+        ),
         # "observation/image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
         # "observation/wrist_image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
         "observation/joint_position": np.random.rand(7),
@@ -47,7 +51,12 @@ class DroidInputs(transforms.DataTransformFn):
         wrist_image = _parse_image(data["observation/wrist_image_left"])
 
         match self.model_type:
-            case _model.ModelType.PI0 | _model.ModelType.PI05 | _model.ModelType.CSPi0 | _model.ModelType.CSPi05:
+            case (
+                _model.ModelType.PI0
+                | _model.ModelType.PI05
+                | _model.ModelType.CSPi0
+                | _model.ModelType.CSPi05
+            ):
                 names = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
                 images = (base_image, wrist_image, np.zeros_like(base_image))
                 image_masks = (np.True_, np.True_, np.False_)

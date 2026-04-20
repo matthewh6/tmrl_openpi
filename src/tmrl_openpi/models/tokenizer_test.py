@@ -16,7 +16,9 @@ def test_fast_tokenizer():
     state = np.random.rand(5).astype(np.float32)
     action = np.random.rand(3, 2).astype(np.float32)
     tokenizer = _tokenizer.FASTTokenizer(max_len=256)
-    tokens, token_masks, ar_masks, loss_masks = tokenizer.tokenize(prompt, state, action)
+    tokens, token_masks, ar_masks, loss_masks = tokenizer.tokenize(
+        prompt, state, action
+    )
 
     assert tokens.shape == (256,)
     assert token_masks.shape == (256,)

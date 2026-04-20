@@ -38,7 +38,9 @@ def test_pi0_action_expert_lora():
 
 
 def test_pi0_all_lora():
-    config = _pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora")
+    config = _pi0.Pi0Config(
+        paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+    )
     state = _get_frozen_state(config)
     # sum of gemma_lora and action_expert_lora's frozen params.
     assert len(state) == 17

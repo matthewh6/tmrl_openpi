@@ -29,7 +29,9 @@ def tree_to_info(tree: at.PyTree, interp_func: Callable[[Any], str] = str) -> st
     the leaf values to more meaningful strings.
     """
     tree, _ = jax.tree_util.tree_flatten_with_path(tree)
-    return "\n".join(f"{jax.tree_util.keystr(path)}: {interp_func(value)}" for path, value in tree)
+    return "\n".join(
+        f"{jax.tree_util.keystr(path)}: {interp_func(value)}" for path, value in tree
+    )
 
 
 @at.typecheck

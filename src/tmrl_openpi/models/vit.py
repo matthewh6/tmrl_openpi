@@ -57,9 +57,13 @@ class AddPositionEmbs(nn.Module):
           Output tensor with shape `(bs, timesteps, in_dim)`.
         """
         # inputs.shape is (batch_size, seq_len, emb_dim).
-        assert inputs.ndim == 3, f"Number of dimensions should be 3, but it is: {inputs.ndim}"
+        assert (
+            inputs.ndim == 3
+        ), f"Number of dimensions should be 3, but it is: {inputs.ndim}"
         pos_emb_shape = (1, inputs.shape[1], inputs.shape[2])
-        pe = self.param("pos_embedding", self.posemb_init, pos_emb_shape, self.param_dtype)
+        pe = self.param(
+            "pos_embedding", self.posemb_init, pos_emb_shape, self.param_dtype
+        )
         return inputs + pe
 
 
@@ -71,8 +75,12 @@ class MlpBlock(nn.Module):
     param_dtype: Dtype = jnp.float32
     out_dim: int | None = None
     dropout_rate: float = 0.1
-    kernel_init: Callable[[PRNGKey, Shape, Dtype], Array] = nn.initializers.xavier_uniform()
-    bias_init: Callable[[PRNGKey, Shape, Dtype], Array] = nn.initializers.normal(stddev=1e-6)
+    kernel_init: Callable[[PRNGKey, Shape, Dtype], Array] = (
+        nn.initializers.xavier_uniform()
+    )
+    bias_init: Callable[[PRNGKey, Shape, Dtype], Array] = nn.initializers.normal(
+        stddev=1e-6
+    )
 
     @nn.compact
     def __call__(self, inputs, *, deterministic):
@@ -150,9 +158,9 @@ class Encoder1DBlock(nn.Module):
 
         # MLP block.
         y = nn.LayerNorm(dtype=self.dtype)(x)
-        y = MlpBlock(mlp_dim=self.mlp_dim, dtype=self.dtype, dropout_rate=self.dropout_rate)(
-            y, deterministic=deterministic
-        )
+        y = MlpBlock(
+            mlp_dim=self.mlp_dim, dtype=self.dtype, dropout_rate=self.dropout_rate
+        )(y, deterministic=deterministic)
 
         return x + y, None
 
@@ -240,7 +248,11 @@ class VisionTransformer(nn.Module):
 
             # Root block.
             x = models_resnet.StdConv(
-                features=width, kernel_size=(7, 7), strides=(2, 2), use_bias=False, name="conv_root"
+                features=width,
+                kernel_size=(7, 7),
+                strides=(2, 2),
+                use_bias=False,
+                name="conv_root",
             )(x)
             x = nn.GroupNorm(name="gn_root")(x)
             x = nn.relu(x)
@@ -249,11 +261,17 @@ class VisionTransformer(nn.Module):
             # ResNet stages.
             if self.resnet.num_layers:
                 x = models_resnet.ResNetStage(
-                    block_size=self.resnet.num_layers[0], nout=width, first_stride=(1, 1), name="block1"
+                    block_size=self.resnet.num_layers[0],
+                    nout=width,
+                    first_stride=(1, 1),
+                    name="block1",
                 )(x)
                 for i, block_size in enumerate(self.resnet.num_layers[1:], 1):
                     x = models_resnet.ResNetStage(
-                        block_size=block_size, nout=width * 2**i, first_stride=(2, 2), name=f"block{i + 1}"
+                        block_size=block_size,
+                        nout=width * 2**i,
+                        first_stride=(2, 2),
+                        name=f"block{i + 1}",
                     )(x)
 
         n, h, w, c = x.shape
@@ -280,7 +298,9 @@ class VisionTransformer(nn.Module):
                 cls = jnp.tile(cls, [n, 1, 1])
                 x = jnp.concatenate([cls, x], axis=1)
 
-            x = self.encoder(name="Transformer", **self.transformer, dtype=self.dtype)(x, train=train)
+            x = self.encoder(name="Transformer", **self.transformer, dtype=self.dtype)(
+                x, train=train
+            )
 
         if self.classifier == "token":
             x = x[:, 0]

@@ -103,7 +103,11 @@ class Policy(BasePolicy):
             for cam in inputs["image"]:
                 m = inputs["image_mask"][cam]
                 if m.ndim == 0:
-                    inputs["image_mask"][cam] = m.expand(bs) if self._is_pytorch_model else jnp.broadcast_to(m, (bs,))
+                    inputs["image_mask"][cam] = (
+                        m.expand(bs)
+                        if self._is_pytorch_model
+                        else jnp.broadcast_to(m, (bs,))
+                    )
 
             # Ensure prompt fields match the batch dimension bs
             for k in ["tokenized_prompt", "tokenized_prompt_mask"]:
@@ -123,7 +127,9 @@ class Policy(BasePolicy):
             arr = np.broadcast_to(arr, (bs, self._ad)).copy()
             arr = np.repeat(arr[:, None, :], self._ah, axis=1)
         if arr.ndim != 3 or arr.shape[0] != bs:
-            raise ValueError(f"Bad noise shape {arr.shape}, expected ({bs}, {self._ah}, {self._ad})")
+            raise ValueError(
+                f"Bad noise shape {arr.shape}, expected ({bs}, {self._ah}, {self._ad})"
+            )
         return arr.astype(np.float32, copy=False)
 
     def _normalize_time(self, tcont_context, bs: int, batched: bool) -> np.ndarray:
@@ -150,9 +156,13 @@ class Policy(BasePolicy):
         if action_noise is not None:
             kw["noise"] = self._to_backend(self._normalize_noise(action_noise, bs))
         if tcont_context is not None:
-            kw["time_prefix"] = self._to_backend(self._normalize_time(tcont_context, bs, batched))
+            kw["time_prefix"] = self._to_backend(
+                self._normalize_time(tcont_context, bs, batched)
+            )
         if context_noise is not None:
-            arr = np.repeat(self._to_np(context_noise)[:, None, :], 816, axis=1)  # TODO: hardcoded prefix seq len
+            arr = np.repeat(
+                self._to_np(context_noise)[:, None, :], 816, axis=1
+            )  # TODO: hardcoded prefix seq len
             kw["noise_prefix"] = self._to_backend(arr)
 
         observation = _model.Observation.from_dict(inputs)
@@ -173,7 +183,9 @@ class Policy(BasePolicy):
             raw,
         )
         if not batched:
-            outputs = jax.tree.map(lambda x: x[0] if hasattr(x, "ndim") and x.ndim > 0 else x, outputs)
+            outputs = jax.tree.map(
+                lambda x: x[0] if hasattr(x, "ndim") and x.ndim > 0 else x, outputs
+            )
         outputs = self._output_transform(outputs)
         outputs["policy_timing"] = {"infer_ms": (time.monotonic() - t0) * 1000}
 

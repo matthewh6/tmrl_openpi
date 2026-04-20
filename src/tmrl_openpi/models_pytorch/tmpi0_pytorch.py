@@ -10,7 +10,12 @@ from tmrl_openpi.models_pytorch.pi0_pytorch import make_att_2d_masks
 
 
 def create_dual_sinusoidal_pos_embedding(
-    time: torch.tensor, time_prefix: torch.tensor, dimension: int, min_period: float, max_period: float, device="cpu"
+    time: torch.tensor,
+    time_prefix: torch.tensor,
+    dimension: int,
+    min_period: float,
+    max_period: float,
+    device="cpu",
 ) -> Tensor:
     """Computes dual sine-cosine positional embedding vectors for scalar positions."""
     if dimension % 4 != 0:
@@ -28,7 +33,13 @@ def create_dual_sinusoidal_pos_embedding(
     sin_input = scaling_factor[None, :] * time[:, None]
     sin_input_prefix = scaling_factor[None, :] * time_prefix[:, None]
     return torch.cat(
-        [torch.sin(sin_input), torch.cos(sin_input), torch.sin(sin_input_prefix), torch.cos(sin_input_prefix)], dim=1
+        [
+            torch.sin(sin_input),
+            torch.cos(sin_input),
+            torch.sin(sin_input_prefix),
+            torch.cos(sin_input_prefix),
+        ],
+        dim=1,
     )
 
 
@@ -36,7 +47,9 @@ class CSPi0Pytorch(PI0Pytorch):
     def __init__(self, config):
         super().__init__(config)
         self.T = 1000
-        betas = torch.linspace(1e-4, 0.02, self.T, device=self.device)  # or your schedule
+        betas = torch.linspace(
+            1e-4, 0.02, self.T, device=self.device
+        )  # or your schedule
         alphas = 1.0 - betas
         self.alpha_bars = torch.cumprod(alphas, dim=0)  # (T,)
 
@@ -115,7 +128,9 @@ class CSPi0Pytorch(PI0Pytorch):
         embs.append(action_time_emb)
 
         bsize, action_time_dim = action_time_emb.shape[:2]
-        action_time_mask = torch.ones(bsize, action_time_dim, dtype=torch.bool, device=timestep.device)
+        action_time_mask = torch.ones(
+            bsize, action_time_dim, dtype=torch.bool, device=timestep.device
+        )
         pad_masks.append(action_time_mask)
 
         # Set attention masks so that image, language and state inputs do not attend to action tokens
@@ -128,12 +143,24 @@ class CSPi0Pytorch(PI0Pytorch):
 
         return embs, pad_masks, att_masks, adarms_cond
 
-    def forward(self, observation, actions, noise=None, time=None, noise_prefix=None, time_prefix=None) -> Tensor:
+    def forward(
+        self,
+        observation,
+        actions,
+        noise=None,
+        time=None,
+        noise_prefix=None,
+        time_prefix=None,
+    ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
-        images, img_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation, train=True)
+        images, img_masks, lang_tokens, lang_masks, state = (
+            self._preprocess_observation(observation, train=True)
+        )
 
         # First handle the prefix (VLM Embeddings)
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, lang_tokens, lang_masks)
+        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
+            images, img_masks, lang_tokens, lang_masks
+        )
 
         if noise_prefix is None:
             noise_prefix = self.sample_noise(prefix_embs.shape, prefix_embs.device)
@@ -167,10 +194,14 @@ class CSPi0Pytorch(PI0Pytorch):
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
 
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(state, x_t, time, time_prefix)
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = (
+            self.embed_suffix(state, x_t, time, time_prefix)
+        )
 
         if (
-            self.paligemma_with_expert.paligemma.language_model.layers[0].self_attn.q_proj.weight.dtype
+            self.paligemma_with_expert.paligemma.language_model.layers[
+                0
+            ].self_attn.q_proj.weight.dtype
             == torch.bfloat16
         ):
             suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
@@ -186,7 +217,9 @@ class CSPi0Pytorch(PI0Pytorch):
         att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
 
         # Apply gradient checkpointing if enabled
-        def forward_func(noisy_prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond):
+        def forward_func(
+            noisy_prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond
+        ):
             (_, suffix_out), _ = self.paligemma_with_expert.forward(
                 attention_mask=att_2d_masks_4d,
                 position_ids=position_ids,
@@ -198,7 +231,12 @@ class CSPi0Pytorch(PI0Pytorch):
             return suffix_out
 
         suffix_out = self._apply_checkpoint(
-            forward_func, noisy_prefix_embs, suffix_embs, att_2d_masks_4d, position_ids, adarms_cond
+            forward_func,
+            noisy_prefix_embs,
+            suffix_embs,
+            att_2d_masks_4d,
+            position_ids,
+            adarms_cond,
         )
 
         suffix_out = suffix_out[:, -self.config.action_horizon :]
@@ -214,7 +252,13 @@ class CSPi0Pytorch(PI0Pytorch):
 
     @torch.no_grad()
     def sample_actions(
-        self, device, observation, noise=None, noise_prefix=None, time_prefix=None, num_steps=10
+        self,
+        device,
+        observation,
+        noise=None,
+        noise_prefix=None,
+        time_prefix=None,
+        num_steps=10,
     ) -> Tensor:
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = observation.state.shape[0]
@@ -222,9 +266,13 @@ class CSPi0Pytorch(PI0Pytorch):
             actions_shape = (bsize, self.config.action_horizon, self.config.action_dim)
             noise = self.sample_noise(actions_shape, device)
 
-        images, img_masks, lang_tokens, lang_masks, state = self._preprocess_observation(observation, train=False)
+        images, img_masks, lang_tokens, lang_masks, state = (
+            self._preprocess_observation(observation, train=False)
+        )
 
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, lang_tokens, lang_masks)
+        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
+            images, img_masks, lang_tokens, lang_masks
+        )
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 
@@ -294,15 +342,17 @@ class CSPi0Pytorch(PI0Pytorch):
         timestep_prefix,
     ):
         """Apply one denoising step of the noise `x_t` at a given timestep."""
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(
-            state, x_t, timestep, timestep_prefix
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = (
+            self.embed_suffix(state, x_t, timestep, timestep_prefix)
         )
 
         suffix_len = suffix_pad_masks.shape[1]
         batch_size = prefix_pad_masks.shape[0]
         prefix_len = prefix_pad_masks.shape[1]
 
-        prefix_pad_2d_masks = prefix_pad_masks[:, None, :].expand(batch_size, suffix_len, prefix_len)
+        prefix_pad_2d_masks = prefix_pad_masks[:, None, :].expand(
+            batch_size, suffix_len, prefix_len
+        )
 
         suffix_att_2d_masks = make_att_2d_masks(suffix_pad_masks, suffix_att_masks)
 
@@ -313,7 +363,9 @@ class CSPi0Pytorch(PI0Pytorch):
 
         # Prepare attention masks
         full_att_2d_masks_4d = self._prepare_attention_masks_4d(full_att_2d_masks)
-        self.paligemma_with_expert.gemma_expert.model.config._attn_implementation = "eager"  # noqa: SLF001
+        self.paligemma_with_expert.gemma_expert.model.config._attn_implementation = (
+            "eager"  # noqa: SLF001
+        )
 
         outputs_embeds, _ = self.paligemma_with_expert.forward(
             attention_mask=full_att_2d_masks_4d,

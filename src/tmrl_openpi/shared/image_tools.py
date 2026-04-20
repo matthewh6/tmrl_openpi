@@ -13,7 +13,10 @@ def resize_with_pad(
     height: int,
     width: int,
     method: jax.image.ResizeMethod = jax.image.ResizeMethod.LINEAR,
-) -> at.UInt8[at.Array, "*b {height} {width} c"] | at.Float[at.Array, "*b {height} {width} c"]:
+) -> (
+    at.UInt8[at.Array, "*b {height} {width} c"]
+    | at.Float[at.Array, "*b {height} {width} c"]
+):
     """Replicates tf.image.resize_with_pad. Resizes an image to a target height and width without distortion
     by padding with black. If the image is float32, it must be in the range [-1, 1].
     """
@@ -25,7 +28,9 @@ def resize_with_pad(
     resized_height = int(cur_height / ratio)
     resized_width = int(cur_width / ratio)
     resized_images = jax.image.resize(
-        images, (images.shape[0], resized_height, resized_width, images.shape[3]), method=method
+        images,
+        (images.shape[0], resized_height, resized_width, images.shape[3]),
+        method=method,
     )
     if images.dtype == jnp.uint8:
         # round from float back to uint8

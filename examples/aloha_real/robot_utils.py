@@ -66,7 +66,8 @@ class ImageRecorder:
         # cv2.imwrite('/home/lucyshi/Desktop/sample.jpg', cv_image)
         if self.is_debug:
             getattr(self, f"{cam_name}_timestamps").append(
-                data.images[0].header.stamp.secs + data.images[0].header.stamp.nsecs * 1e-9
+                data.images[0].header.stamp.secs
+                + data.images[0].header.stamp.nsecs * 1e-9
             )
 
     def image_cb_cam_high(self, data):
@@ -88,7 +89,10 @@ class ImageRecorder:
     def get_images(self):
         image_dict = {}
         for cam_name in self.camera_names:
-            while getattr(self, f"{cam_name}_timestamp") <= self.cam_last_timestamps[cam_name]:
+            while (
+                getattr(self, f"{cam_name}_timestamp")
+                <= self.cam_last_timestamps[cam_name]
+            ):
                 time.sleep(0.00001)
             rgb_image = getattr(self, f"{cam_name}_rgb_image")
             depth_image = getattr(self, f"{cam_name}_depth_image")
@@ -121,7 +125,9 @@ class Recorder:
 
         if init_node:
             rospy.init_node("recorder", anonymous=True)
-        rospy.Subscriber(f"/puppet_{side}/joint_states", JointState, self.puppet_state_cb)
+        rospy.Subscriber(
+            f"/puppet_{side}/joint_states", JointState, self.puppet_state_cb
+        )
         rospy.Subscriber(
             f"/puppet_{side}/commands/joint_group",
             JointGroupCommand,
@@ -166,7 +172,9 @@ class Recorder:
         arm_command_freq = 1 / dt_helper(self.arm_command_timestamps)
         gripper_command_freq = 1 / dt_helper(self.gripper_command_timestamps)
 
-        print(f"{joint_freq=:.2f}\n{arm_command_freq=:.2f}\n{gripper_command_freq=:.2f}\n")
+        print(
+            f"{joint_freq=:.2f}\n{arm_command_freq=:.2f}\n{gripper_command_freq=:.2f}\n"
+        )
 
 
 def get_arm_joint_positions(bot):
@@ -200,13 +208,19 @@ def move_grippers(bot_list, target_pose_list, move_time):
         for curr_pose, target_pose in zip(curr_pose_list, target_pose_list)
     ]
 
-    with open(f"/data/gripper_traj_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl", "a") as f:
+    with open(
+        f"/data/gripper_traj_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl",
+        "a",
+    ) as f:
         for t in range(num_steps):
             d = {}
             for bot_id, bot in enumerate(bot_list):
                 gripper_command.cmd = traj_list[bot_id][t]
                 bot.gripper.core.pub_single.publish(gripper_command)
-                d[bot_id] = {"obs": get_arm_gripper_positions(bot), "act": traj_list[bot_id][t]}
+                d[bot_id] = {
+                    "obs": get_arm_gripper_positions(bot),
+                    "act": traj_list[bot_id][t],
+                }
             f.write(json.dumps(d) + "\n")
             time.sleep(constants.DT)
 
@@ -245,7 +259,9 @@ def torque_on(bot):
 
 
 # for DAgger
-def sync_puppet_to_master(master_bot_left, master_bot_right, puppet_bot_left, puppet_bot_right):
+def sync_puppet_to_master(
+    master_bot_left, master_bot_right, puppet_bot_left, puppet_bot_right
+):
     print("\nSyncing!")
 
     # activate master arms

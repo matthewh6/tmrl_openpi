@@ -19,7 +19,10 @@ logger = logging.getLogger("tmrl_openpi")
 
 @at.typecheck
 def posemb_sincos(
-    pos: at.Real[at.Array, " b"], embedding_dim: int, min_period: float, max_period: float
+    pos: at.Real[at.Array, " b"],
+    embedding_dim: int,
+    min_period: float,
+    max_period: float,
 ) -> at.Float[at.Array, "b {embedding_dim}"]:
     """Computes sine-cosine positional embedding vectors for scalar positions."""
     if embedding_dim % 2 != 0:
@@ -91,7 +94,9 @@ class CSPi0Config(Pi0Config):
         return CSPi0(self, rngs=nnx.Rngs(rng))
 
 
-def _rms_normalize(tokens: at.Float[at.Array, "b s emb"]) -> at.Float[at.Array, "b s emb"]:
+def _rms_normalize(
+    tokens: at.Float[at.Array, "b s emb"],
+) -> at.Float[at.Array, "b s emb"]:
     """Normalize each token to unit RMS per embedding dimension."""
     rms = jnp.sqrt(jnp.mean(jnp.square(tokens), axis=-1, keepdims=True))
     return tokens / (rms + 1e-6)
@@ -101,7 +106,9 @@ class CSPi0(Pi0):
     def __init__(self, config: CSPi0Config, rngs: nnx.Rngs):
         super().__init__(config, rngs)
         self.T = config.context_noise_T
-        betas = np.linspace(config.context_beta_start, config.context_beta_end, self.T, dtype=np.float32)
+        betas = np.linspace(
+            config.context_beta_start, config.context_beta_end, self.T, dtype=np.float32
+        )
         alphas = 1.0 - betas
         # Store as Python list (not a JAX array) to avoid NNX treating it as state.
         self.alpha_bars = np.cumprod(alphas, axis=0, dtype=np.float32).tolist()
@@ -133,7 +140,11 @@ class CSPi0(Pi0):
         action_tokens = self.action_in_proj(noisy_actions)
         # embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1]
         time_emb = posemb_dual_sincos(
-            timestep, timestep_prefix, self.action_in_proj.out_features, min_period=4e-3, max_period=4.0
+            timestep,
+            timestep_prefix,
+            self.action_in_proj.out_features,
+            min_period=4e-3,
+            max_period=4.0,
         )
         if self.pi05:
             # time MLP (for adaRMS)
@@ -145,7 +156,9 @@ class CSPi0(Pi0):
             adarms_cond = time_emb
         else:
             # mix timestep + action information using an MLP (no adaRMS)
-            time_tokens = einops.repeat(time_emb, "b emb -> b s emb", s=self.action_horizon)
+            time_tokens = einops.repeat(
+                time_emb, "b emb -> b s emb", s=self.action_horizon
+            )
             action_time_tokens = jnp.concatenate([action_tokens, time_tokens], axis=-1)
             action_time_tokens = self.action_time_mlp_in(action_time_tokens)
             action_time_tokens = nnx.swish(action_time_tokens)
@@ -163,10 +176,19 @@ class CSPi0(Pi0):
 
     @override
     def compute_loss(
-        self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
+        self,
+        rng: at.KeyArrayLike,
+        observation: _model.Observation,
+        actions: _model.Actions,
+        *,
+        train: bool = False,
     ) -> at.Float[at.Array, "*b ah"]:
-        preprocess_rng, noise_rng, time_rng, noise_prefix_rng, time_prefix_rng = jax.random.split(rng, 5)
-        observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
+        preprocess_rng, noise_rng, time_rng, noise_prefix_rng, time_prefix_rng = (
+            jax.random.split(rng, 5)
+        )
+        observation = _model.preprocess_observation(
+            preprocess_rng, observation, train=train
+        )
 
         batch_shape = actions.shape[:-2]
         noise = jax.random.normal(noise_rng, actions.shape)
@@ -192,13 +214,18 @@ class CSPi0(Pi0):
         noisy_prefix_tokens = sqrt_ab * prefix_tokens + sqrt_bb * noise_prefix
 
         # forward pass of suffix
-        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time, time_prefix)
+        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
+            observation, x_t, time, time_prefix
+        )
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
         ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
         attn_mask = make_attn_mask(input_mask, ar_mask)
         positions = jnp.cumsum(input_mask, axis=1) - 1
         (prefix_out, suffix_out), _ = self.PaliGemma.llm(
-            [noisy_prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions, adarms_cond=[None, adarms_cond]
+            [noisy_prefix_tokens, suffix_tokens],
+            mask=attn_mask,
+            positions=positions,
+            adarms_cond=[None, adarms_cond],
         )
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
@@ -227,12 +254,16 @@ class CSPi0(Pi0):
         if time_prefix is None:
             time_prefix = jnp.zeros(batch_size, dtype=jnp.float32)
         else:
-            time_prefix = jnp.broadcast_to(jnp.clip(time_prefix, 0.0, 1.0), (batch_size,))
+            time_prefix = jnp.broadcast_to(
+                jnp.clip(time_prefix, 0.0, 1.0), (batch_size,)
+            )
             time_prefix = jnp.asarray(time_prefix, dtype=jnp.float32)
 
         if noise_prefix is None:
             if rng is None:
-                raise ValueError("Provide `rng` when supplying non-zero `time_prefix` without `noise_prefix`.")
+                raise ValueError(
+                    "Provide `rng` when supplying non-zero `time_prefix` without `noise_prefix`."
+                )
             rng, noise_prefix_rng = jax.random.split(rng)
             noise_prefix = jax.random.normal(noise_prefix_rng, prefix_tokens.shape)
         t_idx = jnp.clip((time_prefix * (self.T - 1)).astype(jnp.int32), 0, self.T - 1)
@@ -244,14 +275,16 @@ class CSPi0(Pi0):
         sqrt_bb = sqrt_bb.astype(prefix_tokens.dtype)
         noisy_prefix_tokens = sqrt_ab * prefix_tokens + sqrt_bb * noise_prefix
 
-        noisy_norm = jnp.linalg.norm(noisy_prefix_tokens, axis=-1, keepdims=True)
-        clean_norm = jnp.linalg.norm(prefix_tokens, axis=-1, keepdims=True)
+        jnp.linalg.norm(noisy_prefix_tokens, axis=-1, keepdims=True)
+        jnp.linalg.norm(prefix_tokens, axis=-1, keepdims=True)
         # cosine_sim = jnp.sum(noisy_prefix_tokens * prefix_tokens, axis=-1) / (noisy_norm.squeeze(-1) * clean_norm.squeeze(-1) + 1e-8)
         # jax.debug.print('cosine_sim (mean): {}', jnp.mean(cosine_sim))
 
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
-        _, kv_cache = self.PaliGemma.llm([noisy_prefix_tokens, None], mask=prefix_attn_mask, positions=positions)
+        _, kv_cache = self.PaliGemma.llm(
+            [noisy_prefix_tokens, None], mask=prefix_attn_mask, positions=positions
+        )
 
         def step(carry):
             x_t, time = carry
@@ -263,17 +296,25 @@ class CSPi0(Pi0):
             suffix_attn_mask = make_attn_mask(suffix_mask, suffix_ar_mask)
             # `prefix_attn_mask` is shape (b, suffix_len, prefix_len) indicating how the suffix tokens can attend to the
             # prefix tokens
-            prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=suffix_tokens.shape[1])
+            prefix_attn_mask = einops.repeat(
+                prefix_mask, "b p -> b s p", s=suffix_tokens.shape[1]
+            )
             # `combined_mask` is shape (b, suffix_len, prefix_len + suffix_len) indicating how the suffix tokens (which
             # generate the queries) can attend to the full prefix + suffix sequence (which generates the keys and values)
-            full_attn_mask = jnp.concatenate([prefix_attn_mask, suffix_attn_mask], axis=-1)
+            full_attn_mask = jnp.concatenate(
+                [prefix_attn_mask, suffix_attn_mask], axis=-1
+            )
             assert full_attn_mask.shape == (
                 batch_size,
                 suffix_tokens.shape[1],
                 prefix_tokens.shape[1] + suffix_tokens.shape[1],
             )
             # `positions` is shape (b, suffix_len) indicating the positions of the suffix tokens
-            positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
+            positions = (
+                jnp.sum(prefix_mask, axis=-1)[:, None]
+                + jnp.cumsum(suffix_mask, axis=-1)
+                - 1
+            )
 
             (prefix_out, suffix_out), _ = self.PaliGemma.llm(
                 [None, suffix_tokens],

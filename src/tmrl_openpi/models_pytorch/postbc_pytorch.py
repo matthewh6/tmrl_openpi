@@ -15,7 +15,14 @@ logger = logging.getLogger("tmrl_openpi")
 class EnsembleMember(nn.Module):
     """MLP that predicts an action sequence from a low-dim state vector."""
 
-    def __init__(self, obs_dim: int, action_dim: int, action_horizon: int, hidden_size: int = 512, num_layers: int = 3):
+    def __init__(
+        self,
+        obs_dim: int,
+        action_dim: int,
+        action_horizon: int,
+        hidden_size: int = 512,
+        num_layers: int = 3,
+    ):
         super().__init__()
         out_dim = action_horizon * action_dim
         layers: list[nn.Module] = []
@@ -53,7 +60,12 @@ class PosteriorVarianceEstimator(nn.Module):
         super().__init__()
         self.ensemble_size = ensemble_size
         self.members = nn.ModuleList(
-            [EnsembleMember(obs_dim, action_dim, action_horizon, hidden_size, num_layers) for _ in range(ensemble_size)]
+            [
+                EnsembleMember(
+                    obs_dim, action_dim, action_horizon, hidden_size, num_layers
+                )
+                for _ in range(ensemble_size)
+            ]
         )
         self._fitted = False
 
@@ -82,7 +94,9 @@ class PosteriorVarianceEstimator(nn.Module):
             b_actions = actions[idx].to(device)
 
             optimizer = torch.optim.Adam(member.parameters(), lr=lr)
-            loader = DataLoader(TensorDataset(b_states, b_actions), batch_size=batch_size, shuffle=True)
+            loader = DataLoader(
+                TensorDataset(b_states, b_actions), batch_size=batch_size, shuffle=True
+            )
 
             member.train()
             for _epoch in range(num_epochs):

@@ -32,7 +32,9 @@ def get_cache_dir() -> pathlib.Path:
     if os.path.exists("/mnt/weka"):  # noqa: PTH110
         default_dir = f"/mnt/weka/{getpass.getuser()}/.cache/openpi"
 
-    cache_dir = pathlib.Path(os.getenv(_OPENPI_DATA_HOME, default_dir)).expanduser().resolve()
+    cache_dir = (
+        pathlib.Path(os.getenv(_OPENPI_DATA_HOME, default_dir)).expanduser().resolve()
+    )
     cache_dir.mkdir(parents=True, exist_ok=True)
     _set_folder_permission(cache_dir)
     return cache_dir
@@ -102,7 +104,9 @@ def maybe_download(url: str, *, force_download: bool = False, **kwargs) -> pathl
                     boto_session=boto3.Session(
                         region_name="us-west-1",
                     ),
-                    botocore_config=botocore.config.Config(signature_version=botocore.UNSIGNED),
+                    botocore_config=botocore.config.Config(
+                        signature_version=botocore.UNSIGNED
+                    ),
                 )
             elif url.startswith("s3://"):
                 # Download with default boto3 credentials.
@@ -131,11 +135,17 @@ def _download_fsspec(url: str, local_path: pathlib.Path, **kwargs) -> None:
         total_size = fs.du(url)
     else:
         total_size = info["size"]
-    with tqdm.tqdm(total=total_size, unit="iB", unit_scale=True, unit_divisor=1024) as pbar:
+    with tqdm.tqdm(
+        total=total_size, unit="iB", unit_scale=True, unit_divisor=1024
+    ) as pbar:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = executor.submit(fs.get, url, local_path, recursive=is_dir)
         while not future.done():
-            current_size = sum(f.stat().st_size for f in [*local_path.rglob("*"), local_path] if f.is_file())
+            current_size = sum(
+                f.stat().st_size
+                for f in [*local_path.rglob("*"), local_path]
+                if f.is_file()
+            )
             pbar.update(current_size - pbar.n)
             time.sleep(1)
         pbar.update(total_size - pbar.n)
@@ -184,7 +194,9 @@ def _download_boto3(
             prefix = prefix + "/"
 
     # Get all candidate objects, filter out directories.
-    objects = [x for x in bucket.objects.filter(Prefix=prefix) if not x.key.endswith("/")]
+    objects = [
+        x for x in bucket.objects.filter(Prefix=prefix) if not x.key.endswith("/")
+    ]
     if not objects:
         raise FileNotFoundError(f"No objects found at {url}")
 
@@ -211,7 +223,9 @@ def _download_boto3(
         )
 
     try:
-        with tqdm.tqdm(total=total_size, unit="iB", unit_scale=True, unit_divisor=1024) as pbar:
+        with tqdm.tqdm(
+            total=total_size, unit="iB", unit_scale=True, unit_divisor=1024
+        ) as pbar:
             if os.getenv("IS_DOCKER", "false").lower() == "true":
                 # tqdm is bugged when using docker-compose. See https://github.com/tqdm/tqdm/issues/771
                 def update_progress(size: int) -> None:
@@ -235,7 +249,9 @@ def _download_boto3(
 
 
 def _get_s3_transfer_manager(
-    session: boto3.Session, workers: int, botocore_config: botocore.config.Config | None = None
+    session: boto3.Session,
+    workers: int,
+    botocore_config: botocore.config.Config | None = None,
 ) -> s3_transfer.TransferManager:
     # Add a few extra connections to prevent exceeding the pool size.
     config = botocore.config.Config(max_pool_connections=workers + 2)
@@ -278,9 +294,18 @@ def _ensure_permissions(path: pathlib.Path) -> None:
 
     def _set_file_permission(file_path: pathlib.Path) -> None:
         """Set all files to be read & writable, if it is a script, keep it as a script."""
-        file_rw = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
+        file_rw = (
+            stat.S_IRUSR
+            | stat.S_IWUSR
+            | stat.S_IRGRP
+            | stat.S_IWGRP
+            | stat.S_IROTH
+            | stat.S_IWOTH
+        )
         if file_path.stat().st_mode & 0o100:
-            _set_permission(file_path, file_rw | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            _set_permission(
+                file_path, file_rw | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
         else:
             _set_permission(file_path, file_rw)
 
@@ -311,7 +336,9 @@ def _get_mtime(year: int, month: int, day: int) -> float:
 # Partial matching will be used from top to bottom and the first match will be chosen.
 # Cached entries will be retained only if they are newer than the expiration timestamp.
 _INVALIDATE_CACHE_DIRS: dict[re.Pattern, float] = {
-    re.compile("openpi-assets/checkpoints/pi0_aloha_pen_uncap"): _get_mtime(2025, 2, 17),
+    re.compile("openpi-assets/checkpoints/pi0_aloha_pen_uncap"): _get_mtime(
+        2025, 2, 17
+    ),
     re.compile("openpi-assets/checkpoints/pi0_libero"): _get_mtime(2025, 2, 6),
     re.compile("openpi-assets/checkpoints/"): _get_mtime(2025, 2, 3),
 }

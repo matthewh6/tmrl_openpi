@@ -68,7 +68,10 @@ class BridgeInputs(transforms.DataTransformFn):
             sample["observation.images.image_0"] = sample["observation/image"]
 
         # We only mask padding for pi0 model, not pi0-FAST. Do not change this for your own dataset.
-        mask_padding = self.model_type == _model.ModelType.PI0 or self.model_type == _model.ModelType.PI05
+        mask_padding = (
+            self.model_type == _model.ModelType.PI0
+            or self.model_type == _model.ModelType.PI05
+        )
 
         # Ensure expected keys are present
         required_keys = {
@@ -76,7 +79,9 @@ class BridgeInputs(transforms.DataTransformFn):
             "state",
         }
         if not required_keys.issubset(sample.keys()):
-            raise ValueError(f"Missing required keys. Found: {sample.keys()}, Required: {required_keys}")
+            raise ValueError(
+                f"Missing required keys. Found: {sample.keys()}, Required: {required_keys}"
+            )
 
         # Create inputs dict. Do not change the keys in the dict below.
         # convert images to numpy arrays
@@ -87,7 +92,9 @@ class BridgeInputs(transforms.DataTransformFn):
             # old bridge sampling
             available_cameras = np.count_nonzero(sample["camera_present"])
             assert available_cameras > 0, "No cameras present in the sample"
-            camera_idx_to_include = np.arange(available_cameras)[: self.how_many_cameras]
+            camera_idx_to_include = np.arange(available_cameras)[
+                : self.how_many_cameras
+            ]
         else:
             # new just 1 cam bridge dataset
             camera_idx_to_include = [0]
@@ -131,7 +138,9 @@ class BridgeInputs(transforms.DataTransformFn):
         if self.model_type == _model.ModelType.PI0:
             # no base_1_rgb for pi0
             inputs["image"]["right_wrist_0_rgb"] = inputs["image"]["base_1_rgb"]
-            inputs["image_mask"]["right_wrist_0_rgb"] = inputs["image_mask"]["base_1_rgb"]
+            inputs["image_mask"]["right_wrist_0_rgb"] = inputs["image_mask"][
+                "base_1_rgb"
+            ]
             del inputs["image"]["base_1_rgb"]
             del inputs["image_mask"]["base_1_rgb"]
         if "actions" in sample:

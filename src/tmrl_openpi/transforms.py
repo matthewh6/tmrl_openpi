@@ -47,7 +47,12 @@ class Group:
     # Transforms that are applied to the model output data.
     outputs: Sequence[DataTransformFn] = ()
 
-    def push(self, *, inputs: Sequence[DataTransformFn] = (), outputs: Sequence[DataTransformFn] = ()) -> "Group":
+    def push(
+        self,
+        *,
+        inputs: Sequence[DataTransformFn] = (),
+        outputs: Sequence[DataTransformFn] = (),
+    ) -> "Group":
         """Append transforms to the group and return a new group.
 
         Args:
@@ -178,7 +183,10 @@ class Unnormalize(DataTransformFn):
         assert stats.q99 is not None
         q01, q99 = stats.q01, stats.q99
         if (dim := q01.shape[-1]) < x.shape[-1]:
-            return np.concatenate([(x[..., :dim] + 1.0) / 2.0 * (q99 - q01 + 1e-6) + q01, x[..., dim:]], axis=-1)
+            return np.concatenate(
+                [(x[..., :dim] + 1.0) / 2.0 * (q99 - q01 + 1e-6) + q01, x[..., dim:]],
+                axis=-1,
+            )
         return (x + 1.0) / 2.0 * (q99 - q01 + 1e-6) + q01
 
 
@@ -188,7 +196,10 @@ class ResizeImages(DataTransformFn):
     width: int
 
     def __call__(self, data: DataDict) -> DataDict:
-        data["image"] = {k: image_tools.resize_with_pad(v, self.height, self.width) for k, v in data["image"].items()}
+        data["image"] = {
+            k: image_tools.resize_with_pad(v, self.height, self.width)
+            for k, v in data["image"].items()
+        }
         return data
 
 
@@ -218,7 +229,9 @@ class DeltaActions(DataTransformFn):
         mask = np.asarray(self.mask)
         dims = mask.shape[-1]
         actions = actions.copy()  # avoid read-only error
-        actions[..., :dims] -= np.expand_dims(np.where(mask, state[..., :dims], 0), axis=-2)
+        actions[..., :dims] -= np.expand_dims(
+            np.where(mask, state[..., :dims], 0), axis=-2
+        )
         data["actions"] = actions
 
         return data
@@ -273,7 +286,11 @@ class TokenizePrompt(DataTransformFn):
                 prompt = str(getattr(prompt, "item", lambda: prompt)())
 
         tokens, token_masks = self.tokenizer.tokenize(prompt, state)
-        return {**data, "tokenized_prompt": tokens, "tokenized_prompt_mask": token_masks}
+        return {
+            **data,
+            "tokenized_prompt": tokens,
+            "tokenized_prompt_mask": token_masks,
+        }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -288,7 +305,9 @@ class TokenizeFASTInputs(DataTransformFn):
             prompt = prompt.item()
 
         state, actions = data["state"], data.get("actions")
-        tokens, token_mask, ar_mask, loss_mask = self.tokenizer.tokenize(prompt, state, actions)
+        tokens, token_mask, ar_mask, loss_mask = self.tokenizer.tokenize(
+            prompt, state, actions
+        )
         return {
             **data,
             "tokenized_prompt": tokens,
@@ -309,7 +328,9 @@ class ExtractFASTActions(DataTransformFn):
             return data
         # Model outputs are saved in "actions", but for FAST models they represent tokens.
         tokens = data.pop("actions")
-        actions = self.tokenizer.extract_actions(tokens.astype(np.int32), self.action_horizon, self.action_dim)
+        actions = self.tokenizer.extract_actions(
+            tokens.astype(np.int32), self.action_horizon, self.action_dim
+        )
         return {
             **data,
             "actions": actions,
@@ -343,7 +364,9 @@ class PadStatesAndActions(DataTransformFn):
     def __call__(self, data: DataDict) -> DataDict:
         data["state"] = pad_to_dim(data["state"], self.model_action_dim, axis=-1)
         if "actions" in data:
-            data["actions"] = pad_to_dim(data["actions"], self.model_action_dim, axis=-1)
+            data["actions"] = pad_to_dim(
+                data["actions"], self.model_action_dim, axis=-1
+            )
         return data
 
 
@@ -412,7 +435,11 @@ def transform_dict(patterns: Mapping[str, str | None], tree: at.PyTree) -> at.Py
 
 
 def apply_tree(
-    tree: at.PyTree[T], selector: at.PyTree[S], fn: Callable[[T, S], T], *, strict: bool = False
+    tree: at.PyTree[T],
+    selector: at.PyTree[S],
+    fn: Callable[[T, S], T],
+    *,
+    strict: bool = False,
 ) -> at.PyTree[T]:
     tree = flatten_dict(tree)
     selector = flatten_dict(selector)
@@ -430,7 +457,9 @@ def apply_tree(
     return unflatten_dict({k: transform(k, v) for k, v in tree.items()})
 
 
-def pad_to_dim(x: np.ndarray, target_dim: int, axis: int = -1, value: float = 0.0) -> np.ndarray:
+def pad_to_dim(
+    x: np.ndarray, target_dim: int, axis: int = -1, value: float = 0.0
+) -> np.ndarray:
     """Pad an array to the target dimension with zeros along the specified axis."""
     current_dim = x.shape[axis]
     if current_dim < target_dim:

@@ -17,7 +17,9 @@ class AlohaRealEnvironment(_environment.Environment):
         render_height: int = 224,
         render_width: int = 224,
     ) -> None:
-        self._env = _real_env.make_real_env(init_node=True, reset_position=reset_position)
+        self._env = _real_env.make_real_env(
+            init_node=True, reset_position=reset_position
+        )
         self._render_height = render_height
         self._render_width = render_width
 
@@ -43,7 +45,9 @@ class AlohaRealEnvironment(_environment.Environment):
 
         for cam_name in obs["images"]:
             img = image_tools.convert_to_uint8(
-                image_tools.resize_with_pad(obs["images"][cam_name], self._render_height, self._render_width)
+                image_tools.resize_with_pad(
+                    obs["images"][cam_name], self._render_height, self._render_width
+                )
             )
             obs["images"][cam_name] = einops.rearrange(img, "h w c -> c h w")
 

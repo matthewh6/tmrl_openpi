@@ -63,7 +63,14 @@ def test_absolute_actions_noop():
 
 
 def test_make_bool_mask():
-    assert _transforms.make_bool_mask(2, -2, 2) == (True, True, False, False, True, True)
+    assert _transforms.make_bool_mask(2, -2, 2) == (
+        True,
+        True,
+        False,
+        False,
+        True,
+        True,
+    )
     assert _transforms.make_bool_mask(2, 0, 2) == (True, True, True, True)
 
 

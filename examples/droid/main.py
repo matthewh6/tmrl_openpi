@@ -43,9 +43,7 @@ class Args:
 
     # Remote server parameters
     remote_host: str = "0.0.0.0"  # point this to the IP address of the policy server, e.g., "192.168.1.100"
-    remote_port: int = (
-        8000  # point this to the port of the policy server, default server port for openpi servers is 8000
-    )
+    remote_port: int = 8000  # point this to the port of the policy server, default server port for openpi servers is 8000
 
 
 # We are using Ctrl+C to optionally terminate rollouts early -- however, if we press Ctrl+C while the policy server is
@@ -72,16 +70,18 @@ def prevent_keyboard_interrupt():
 
 def main(args: Args):
     # Make sure external camera is specified by user -- we only use one external camera for the policy
-    assert args.external_camera is not None and args.external_camera in ["left", "right"], (
-        f"Please specify an external camera to use for the policy, choose from ['left', 'right'], but got {args.external_camera}"
-    )
+    assert (
+        args.external_camera is not None and args.external_camera in ["left", "right"]
+    ), f"Please specify an external camera to use for the policy, choose from ['left', 'right'], but got {args.external_camera}"
 
     # Initialize the Panda environment. Using joint velocity action space and gripper position action space is very important.
     env = RobotEnv(action_space="joint_velocity", gripper_action_space="position")
     print("Created the droid env!")
 
     # Connect to the policy server
-    policy_client = websocket_client_policy.WebsocketClientPolicy(args.remote_host, args.remote_port)
+    policy_client = websocket_client_policy.WebsocketClientPolicy(
+        args.remote_host, args.remote_port
+    )
 
     df = pd.DataFrame(columns=["success", "duration", "video_filename"])
 
@@ -111,7 +111,10 @@ def main(args: Args):
                 video.append(curr_obs[f"{args.external_camera}_image"])
 
                 # Send websocket request to policy server if it's time to predict a new chunk
-                if actions_from_chunk_completed == 0 or actions_from_chunk_completed >= args.open_loop_horizon:
+                if (
+                    actions_from_chunk_completed == 0
+                    or actions_from_chunk_completed >= args.open_loop_horizon
+                ):
                     actions_from_chunk_completed = 0
 
                     # We resize images on the robot laptop to minimize the amount of data sent to the policy server
@@ -120,7 +123,9 @@ def main(args: Args):
                         "observation/exterior_image_1_left": image_tools.resize_with_pad(
                             curr_obs[f"{args.external_camera}_image"], 224, 224
                         ),
-                        "observation/wrist_image_left": image_tools.resize_with_pad(curr_obs["wrist_image"], 224, 224),
+                        "observation/wrist_image_left": image_tools.resize_with_pad(
+                            curr_obs["wrist_image"], 224, 224
+                        ),
                         "observation/joint_position": curr_obs["joint_position"],
                         "observation/gripper_position": curr_obs["gripper_position"],
                         "prompt": instruction,
@@ -159,7 +164,9 @@ def main(args: Args):
 
         video = np.stack(video)
         save_filename = "video_" + timestamp
-        ImageSequenceClip(list(video), fps=10).write_videofile(save_filename + ".mp4", codec="libx264")
+        ImageSequenceClip(list(video), fps=10).write_videofile(
+            save_filename + ".mp4", codec="libx264"
+        )
 
         success: str | float | None = None
         while not isinstance(success, float):

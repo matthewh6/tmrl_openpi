@@ -47,7 +47,8 @@ class RsqrtDecaySchedule(LRScheduleConfig):
                     end_value=self.peak_lr,
                     transition_steps=self.warmup_steps,
                 ),
-                lambda step: self.peak_lr / jnp.sqrt((self.timescale + step) / self.timescale),
+                lambda step: self.peak_lr
+                / jnp.sqrt((self.timescale + step) / self.timescale),
             ],
             [self.warmup_steps],
         )
@@ -78,7 +79,12 @@ class AdamW(OptimizerConfig):
         weight_decay_mask: at.PyTree | None = None,
     ) -> optax.GradientTransformation:
         tx = optax.adamw(
-            lr, b1=self.b1, b2=self.b2, eps=self.eps, weight_decay=self.weight_decay, mask=weight_decay_mask
+            lr,
+            b1=self.b1,
+            b2=self.b2,
+            eps=self.eps,
+            weight_decay=self.weight_decay,
+            mask=weight_decay_mask,
         )
 
         return optax.chain(optax.clip_by_global_norm(self.clip_gradient_norm), tx)
@@ -102,7 +108,9 @@ class SGD(OptimizerConfig):
 
 
 def create_optimizer(
-    optimizer: OptimizerConfig, lr_schedule: LRScheduleConfig, weight_decay_mask: at.PyTree | None = None
+    optimizer: OptimizerConfig,
+    lr_schedule: LRScheduleConfig,
+    weight_decay_mask: at.PyTree | None = None,
 ) -> optax.GradientTransformation:
     lr = lr_schedule.create()
     return optimizer.create(lr, weight_decay_mask=weight_decay_mask)
